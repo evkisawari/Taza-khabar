@@ -28,7 +28,7 @@ def clean_html(raw_html):
 
 def summarize(text, word_limit=70):
     if not text or len(text) < 40:
-        return "Latest updates from our reporting partners. Tap 'Read More' for exhaustive coverage."
+        return "⚡ LIVE UPDATES: Developing story from our global bureaus. Tap 'Read More' for latest developments."
     words = text.split()
     if len(words) <= word_limit: return text
     snippet = " ".join(words[:word_limit])
@@ -66,12 +66,13 @@ async def fetch_direct_rss(source):
                 final_category = source['category']
                 is_trending = 0
                 
+                # --- PRO DRONE ATTACK DETECTOR ---
                 war_keywords = ["iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv", "हमास", "ईरान", "युद्ध"]
                 search_text = (title + " " + short_content).lower()
                 
                 if any(kw in search_text for kw in war_keywords):
                     final_category = "Iran War"
-                    if datetime.utcnow() - pub_date < timedelta(hours=6): is_trending = 1
+                    is_trending = 1 # FORCE IRAN WAR TO TOP
 
                 articles.append(Article(
                     id=entry.get('id', entry.get('link', '')),
@@ -92,33 +93,45 @@ async def fetch_direct_rss(source):
         return []
 
 async def sync_all_news():
-    logger.info(f"✨ Deep Sync Initiated at {datetime.now()}")
+    logger.info(f"⚡ LIVE SYNC: Catching the Iran Crisis at {datetime.now()}")
     sources = [
+        # --- CRISIS PRIORITY FEEDS ---
+        {'name': 'Google Conflict Live', 'url': 'https://news.google.com/rss/search?q=Iran+Israel+drone+attack+live&hl=en-IN&gl=IN&ceid=IN:en', 'category': 'Iran War', 'language': 'en'},
+        {'name': 'Indian Express War', 'url': 'https://indianexpress.com/section/world/feed/', 'category': 'International', 'language': 'en'},
+        {'name': 'The Hindu Global', 'url': 'https://www.thehindu.com/news/international/feeder/default.rss', 'category': 'International', 'language': 'en'},
+        {'name': 'NDTV World', 'url': 'https://www.ndtv.com/rss/world-news', 'category': 'International', 'language': 'en'},
+        
+        # --- Standard Feeds ---
         {'name': 'Google Live News', 'url': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en', 'category': 'National', 'language': 'en'},
-        {'name': 'Conflict Watch', 'url': 'https://news.google.com/rss/search?q=Iran+Israel+War+live&hl=en-IN&gl=IN&ceid=IN:en', 'category': 'Iran War', 'language': 'en'},
-        {'name': 'Al Jazeera', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'International', 'language': 'en'},
-        {'name': 'BBC World', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
-        {'name': 'Independent UK', 'url': 'https://www.independent.co.uk/news/world/rss', 'category': 'International', 'language': 'en'},
         {'name': 'India Today Live', 'url': 'https://www.indiatoday.in/rss/1206584', 'category': 'National', 'language': 'en'},
         {'name': 'Aaj Tak Live', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
-        {'name': 'Bhaskar Live', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},
+        {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},
     ]
     
     async with AsyncSessionLocal() as db:
         total_added = 0
+        total_updated = 0
         try:
             for source in sources:
                 articles = await fetch_direct_rss(source)
                 for article in articles:
-                    # PRO FIX: No more aggressive title similarity check. Only unique ID check.
                     stmt = select(Article).where(Article.id == article.id)
                     res = await db.execute(stmt)
-                    if res.scalars().first(): continue
+                    existing = res.scalars().first()
+                    
+                    if existing:
+                        # PRO FEATURE: Update content if the reporter added new live info
+                        if existing.content != article.content or existing.title != article.title:
+                            existing.content = article.content
+                            existing.title = article.title
+                            existing.created_at = datetime.utcnow() # Bump to the top!
+                            total_updated += 1
+                        continue
                     
                     db.add(article)
                     total_added += 1
                 await db.commit()
-            logger.info(f"✅ Deep Sync Success. Added {total_added} NEWS FROM TODAY (April 11).")
+            logger.info(f"✅ Sync Finished: {total_added} New, {total_updated} LIVE UPDATES.")
         except Exception as e:
             logger.error(f"Sync failed: {e}")
             await db.rollback()
