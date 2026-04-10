@@ -84,7 +84,7 @@ async def fetch_direct_rss(source):
                     'Sports': 'https://images.unsplash.com/photo-1461896641502-47db8c966ff7?auto=format&fit=crop&q=80&w=1000',
                     'International': 'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?auto=format&fit=crop&q=80&w=1000',
                     'Entertainment': 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&q=80&w=1000',
-                    'Iran War': 'https://images.unsplash.com/photo-1585007600263-ad1f30472692?auto=format&fit=crop&q=80&w=1000',
+                    'Iran War': 'https://images.unsplash.com/photo-1506452936306-8d631899a613?auto=format&fit=crop&q=80&w=1000',
                 }
 
                 if not image_url or 'via.placeholder' in image_url:
@@ -98,8 +98,14 @@ async def fetch_direct_rss(source):
                 final_category = source['category']
                 is_trending = 0
                 
-                war_keywords = ["iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv"]
-                if any(kw in title.lower() for kw in war_keywords) or any(kw in short_content.lower() for kw in war_keywords):
+                # --- BILINGUAL IRAN WAR DETECTOR ---
+                en_keywords = ["iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv", "hamas", "gaza"]
+                hi_keywords = ["ईरान", "इजराइल", "इजरायल", "युद्ध", "मिसाइल", "ड्रोन", "संघर्ष", "तेहरान", "तेल अवीव", "हमास", "गाजा"]
+                
+                all_keywords = en_keywords + hi_keywords
+                search_text = (title + " " + short_content).lower()
+                
+                if any(kw in search_text for kw in all_keywords):
                     final_category = "Iran War"
                     is_trending = 1
 
@@ -125,6 +131,11 @@ async def sync_all_news():
     logger.info(f"✨ Starting Deep News Sync at {datetime.now()}")
     
     sources = [
+        # --- Conflict Dedicated (Auto-Tagging logic will handle these) ---
+        {'name': 'Conflict News EN', 'url': 'https://news.google.com/rss/search?q=Iran+Israel+War&hl=en-IN&gl=IN&ceid=IN:en', 'category': 'Iran War', 'language': 'en'},
+        {'name': 'Conflict News HI', 'url': 'https://news.google.com/rss/search?q=%E0%A4%88%E0%A4%B0%E0%A4%BE%E0%A4%A8+%E0%A4%87%E0%A4%9C%E0%A4%B0%E0%A4%BE%E0%A4%87%E0%A4%B2+%E0%A4%AF%E0%A5%81%E0%A4%A6%E0%A5%8D%E0%A4%A7&hl=hi&gl=IN&ceid=IN:hi', 'category': 'Iran War', 'language': 'hi'},
+        
+        # --- General Global ---
         {'name': 'Google News India', 'url': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en', 'category': 'National', 'language': 'en'},
         {'name': 'Al Jazeera', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'International', 'language': 'en'},
         {'name': 'Defense News', 'url': 'https://www.defensenews.com/m/rss/', 'category': 'International', 'language': 'en'},
@@ -185,3 +196,4 @@ async def sync_all_news():
         except Exception as e:
             logger.error(f"Sync failed: {e}")
             await db.rollback()
+鼓
