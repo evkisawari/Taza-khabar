@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.future import select
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 import asyncio
 import logging
 from database import init_db, AsyncSessionLocal
@@ -11,7 +11,8 @@ from sync import sync_all_news
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Next-Gen Inshorts API")
+# --- CORE ASGI APP ---
+app = FastAPI(title="Taza Khabar Production API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,7 +24,6 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     await init_db()
-    # Start background sync task
     asyncio.create_task(background_sync())
 
 async def background_sync():
@@ -32,13 +32,11 @@ async def background_sync():
             await sync_all_news()
         except Exception as e:
             logging.error(f"Background sync error: {e}")
-        await asyncio.sleep(300)  # Sync every 5 minutes (Inshorts Drip speed)
+        await asyncio.sleep(300) 
 
 @app.get("/")
 async def root():
-    return {"message": "Inshorts News API is running"}
-
-from sqlalchemy import desc, func
+    return {"message": "Taza Khabar API is Online"}
 
 @app.get("/api/status")
 async def get_status():
@@ -71,11 +69,9 @@ async def get_news(category: str = "all", language: str = "en", limit: int = 10,
         if category.lower() != "all":
             query = query.filter(Article.category == category)
         
-        # Language Filter
         query = query.filter(Article.language == language)
-        
-        # Algorithmic Sorting: Trendings First, then Recency
         query = query.order_by(desc(Article.is_trending), desc(Article.created_at)).offset(offset).limit(limit)
+        
         result = await db.execute(query)
         articles = result.scalars().all()
         
@@ -87,4 +83,5 @@ async def get_news(category: str = "all", language: str = "en", limit: int = 10,
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+鼓
