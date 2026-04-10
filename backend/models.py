@@ -1,8 +1,6 @@
 from sqlalchemy import Column, String, Text, DateTime, Integer
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
-
-Base = declarative_base()
+from database import Base
 
 class Article(Base):
     __tablename__ = "articles"
@@ -35,3 +33,4 @@ class Article(Base):
             "score": self.score,
             "is_trending": bool(self.is_trending)
         }
+
