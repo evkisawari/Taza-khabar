@@ -121,9 +121,8 @@ async def fetch_direct_rss(source):
                 clean_content = clean_html(raw_content)
                 short_content = summarize(clean_content)
                 
-                # Generate a unique ID that includes the pub date for Live Updates
-                pub_date_str = entry.get('published', entry.get('pubDate', ''))
-                unique_id = f"{entry.get('link', '')}_{pub_date_str}"
+                # Generate a unique ID that includes both link and title for Live Updates
+                unique_id = f"{entry.get('link', '')}_{entry.get('title', '')}"
                 
                 articles.append(Article(
                     id=unique_id,
