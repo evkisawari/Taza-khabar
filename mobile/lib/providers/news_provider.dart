@@ -35,7 +35,7 @@ class NewsProvider with ChangeNotifier {
   Future<void> setLanguage(String lang) async {
     _language = lang;
     _isFirstRun = false;
-    _news = []; // Immediate UI feedback
+    _news = []; 
     _isLoading = true;
     notifyListeners();
     
@@ -43,14 +43,13 @@ class NewsProvider with ChangeNotifier {
     await prefs.setString('language', lang);
     await prefs.setBool('isFirstRun', false);
     
-    // Refresh everything for the new language
     await fetchCategories();
     await fetchNews(reset: true);
   }
 
   Future<void> fetchCategories() async {
-    // These now match our specialized RSS sources in sync.py
-    _categories = ['All', 'National', 'Politics', 'Technology', 'Sports', 'Entertainment', 'Business', 'International', 'Lifestyle'];
+    // Priority Categories for Taza Khabar
+    _categories = ['All', 'Iran War', 'National', 'Politics', 'Technology', 'Sports', 'Entertainment', 'Business', 'International', 'Lifestyle'];
     notifyListeners();
   }
 
@@ -95,3 +94,4 @@ class NewsProvider with ChangeNotifier {
     fetchNews(reset: true);
   }
 }
+鼓

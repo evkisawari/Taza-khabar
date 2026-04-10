@@ -23,7 +23,6 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     await init_db()
-    # Start background sync task
     asyncio.create_task(background_sync())
 
 async def background_sync():
@@ -32,7 +31,7 @@ async def background_sync():
             await sync_all_news()
         except Exception as e:
             logging.error(f"Background sync error: {e}")
-        await asyncio.sleep(300)  # Sync every 5 minutes (Inshorts Drip speed)
+        await asyncio.sleep(300)
 
 @app.get("/")
 async def root():
@@ -56,7 +55,7 @@ async def get_status():
 async def get_categories():
     return {
         "success": True,
-        "data": ["All", "National", "Politics", "Technology", "Sports", "Entertainment", "Business", "International", "Lifestyle"]
+        "data": ["All", "Iran War", "National", "Politics", "Technology", "Sports", "Entertainment", "Business", "International", "Lifestyle"]
     }
 
 @app.post("/api/sync")
@@ -71,10 +70,7 @@ async def get_news(category: str = "all", language: str = "en", limit: int = 10,
         if category.lower() != "all":
             query = query.filter(Article.category == category)
         
-        # Language Filter
         query = query.filter(Article.language == language)
-        
-        # Algorithmic Sorting: Trendings First, then Recency
         query = query.order_by(desc(Article.is_trending), desc(Article.created_at)).offset(offset).limit(limit)
         result = await db.execute(query)
         articles = result.scalars().all()
@@ -88,3 +84,4 @@ async def get_news(category: str = "all", language: str = "en", limit: int = 10,
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+鼓
