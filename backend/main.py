@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.future import select
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, update
 import asyncio
 import logging
 from database import init_db, AsyncSessionLocal
@@ -23,7 +23,36 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     await init_db()
+    # PRO MIGRATION: Update existing articles to the new Iran War category
+    asyncio.create_task(migrate_old_data())
+    # Start background sync task
     asyncio.create_task(background_sync())
+
+async def migrate_old_data():
+    async with AsyncSessionLocal() as db:
+        logger.info("🛡️ Starting Data Migration for Iran War category...")
+        # Keywords for finding old news to move
+        en_keywords = ["iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv"]
+        hi_keywords = ["ईरान", "इजराइल", "युद्ध", "मिसाइल", "ड्रोन", "संघर्ष", "तेहरान", "तेल अवीव"]
+        
+        all_kw = en_keywords + hi_keywords
+        
+        updated_count = 0
+        try:
+            # Check all articles
+            result = await db.execute(select(Article))
+            articles = result.scalars().all()
+            for a in articles:
+                search_text = (a.title + " " + (a.content or "")).lower()
+                if any(kw in search_text for kw in all_kw):
+                    if a.category != "Iran War":
+                        a.category = "Iran War"
+                        a.is_trending = 1
+                        updated_count += 1
+            await db.commit()
+            logger.info(f"✅ Migration Complete. Moved {updated_count} articles to Iran War.")
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
 
 async def background_sync():
     while True:
@@ -56,19 +85,14 @@ async def get_categories():
         "data": ["All", "Iran War", "National", "Politics", "Technology", "Sports", "Entertainment", "Business", "International", "Lifestyle"]
     }
 
-@app.post("/api/sync")
-async def trigger_sync():
-    asyncio.create_task(sync_all_news())
-    return {"message": "Sync started in background"}
-
 @app.get("/api/news")
 async def get_news(category: str = "all", language: str = "en", limit: int = 10, offset: int = 0):
     async with AsyncSessionLocal() as db:
         query = select(Article)
         
-        # PRO FIX: Case-insensitive category matching
         if category.lower() != "all":
-            query = query.filter(func.lower(Article.category) == category.lower())
+            # Strip spaces and case-insensitive match
+            query = query.filter(func.lower(func.trim(Article.category)) == category.lower().strip())
         
         query = query.filter(Article.language == language)
         query = query.order_by(desc(Article.is_trending), desc(Article.created_at)).offset(offset).limit(limit)
