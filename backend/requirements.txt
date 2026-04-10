@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+httpx
+pydantic
+sqlalchemy
+aiosqlite
+python-dotenv
+feedparser
+beautifulsoup4
+lxml
