@@ -13,4 +13,3 @@ async def init_db():
     async with engine.begin() as conn:
         # Create tables if they don't exist
         await conn.run_sync(Base.metadata.create_all)
-鼓
