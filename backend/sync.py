@@ -121,8 +121,12 @@ async def fetch_direct_rss(source):
                 clean_content = clean_html(raw_content)
                 short_content = summarize(clean_content)
                 
+                # Generate a unique ID that includes the pub date for Live Updates
+                pub_date_str = entry.get('published', entry.get('pubDate', ''))
+                unique_id = f"{entry.get('link', '')}_{pub_date_str}"
+                
                 articles.append(Article(
-                    id=entry.get('id', entry.get('link', '')),
+                    id=unique_id,
                     title=entry.get('title'),
                     content=short_content,
                     author=entry.get('author', source['name']),
@@ -193,19 +197,7 @@ async def sync_all_news():
                     if result.scalars().first():
                         continue
 
-                    # 2. Semantic/Title Dedup (Avoid "Same Story, Different Source")
-                    # Check if first 40 characters of title match any recent news
-                    title_snippet = article.title[:40] if article.title else ""
-                    if title_snippet:
-                        similar_result = await db.execute(
-                            select(Article).where(
-                                Article.title.like(f"{title_snippet}%"),
-                                Article.created_at >= recent_limit
-                            )
-                        )
-                        if similar_result.scalars().first():
-                            continue
-
+                    # 2. Add to DB
                     db.add(article)
                     total_added += 1
                 await db.commit()
