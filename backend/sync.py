@@ -174,7 +174,10 @@ async def sync_all_news():
         {'name': 'Bhaskar Women', 'url': 'https://www.bhaskar.com/rss-v1--category-1532.xml', 'category': 'Lifestyle', 'language': 'hi'},
         {'name': 'Bhaskar Career', 'url': 'https://www.bhaskar.com/rss-v1--category-11945.xml', 'category': 'Technology', 'language': 'hi'},
         {'name': 'Bhaskar International', 'url': 'https://www.bhaskar.com/rss-v1--category-1125.xml', 'category': 'International', 'language': 'hi'},
-        {'name': 'Zee News Hindi', 'url': 'https://zeenews.india.com/hindi/rss/india-news.xml', 'category': 'National', 'language': 'hi'},
+        {'name': 'Google News National', 'url': 'https://news.google.com/rss/headlines/section/topic/NATION?hl=en-IN&gl=IN&ceid=IN:en', 'category': 'National', 'language': 'en'},
+        {'name': 'Google News World', 'url': 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-IN&gl=IN&ceid=IN:en', 'category': 'International', 'language': 'en'},
+        {'name': 'Google News Hindi', 'url': 'https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi', 'category': 'National', 'language': 'hi'},
+        {'name': 'Google News International Hindi', 'url': 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=hi&gl=IN&ceid=IN:hi', 'category': 'International', 'language': 'hi'},
     ]
     
     async with AsyncSessionLocal() as db:
