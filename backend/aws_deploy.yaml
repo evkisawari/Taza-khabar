@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Taza Khabar - Final Inshorts Backend (Auto-Image Search)'
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64'
+
+Resources:
+  NewsServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP 8000 and SSH
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  NewsServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !Ref NewsServerSG
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y docker git
+          service docker start
+          usermod -a -G docker ec2-user
+          cd /home/ec2-user
+          git clone https://github.com/evkisawari/Taza-khabar.git
+          cd Taza-khabar/backend
+          docker build -t news-backend .
+          docker run -d -p 8000:8000 --name news-server news-backend
+
+Outputs:
+  PublicIP:
+    Description: Your Backend World-Wide IP
+    Value: !GetAtt NewsServerInstance.PublicIp
