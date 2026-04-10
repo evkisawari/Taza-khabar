@@ -94,7 +94,6 @@ async def fetch_direct_rss(source):
                 clean_content = clean_html(raw_content)
                 short_content = summarize(clean_content)
                 
-                # --- IRAN WAR PRIORITY LOGIC ---
                 title = entry.get('title', '')
                 final_category = source['category']
                 is_trending = 0
@@ -102,7 +101,7 @@ async def fetch_direct_rss(source):
                 war_keywords = ["iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv"]
                 if any(kw in title.lower() for kw in war_keywords) or any(kw in short_content.lower() for kw in war_keywords):
                     final_category = "Iran War"
-                    is_trending = 1 # Force to the very top!
+                    is_trending = 1
 
                 articles.append(Article(
                     id=entry.get('id', entry.get('link', '')),
@@ -186,4 +185,3 @@ async def sync_all_news():
         except Exception as e:
             logger.error(f"Sync failed: {e}")
             await db.rollback()
-鼓
