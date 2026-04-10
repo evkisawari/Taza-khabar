@@ -1,97 +1,76 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../models/article.dart';
+import '../models/news_model.dart';
 import '../services/api_service.dart';
 
 class NewsProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
-  List<Article> _news = [];
-  List<String> _categories = ['all'];
-  bool _isLoading = false;
-  String _activeCategory = 'all';
-  String _language = 'en';
-  int _offset = 0;
-  bool _isFirstRun = true;
+  
+  List<NewsModel> news = [];
+  List<String> categories = ['all'];
+  String activeCategory = 'all';
+  String _language = 'en'; // Default
+  bool isLoading = false;
+  bool isFirstRun = true; // For language selection overlay
 
-  List<Article> get news => _news;
-  List<String> get categories => _categories;
-  bool get isLoading => _isLoading;
-  String get activeCategory => _activeCategory;
   String get language => _language;
-  bool get isFirstRun => _isFirstRun;
-
-  NewsProvider() {
-    _initPreferences();
-  }
-
-  Future<void> _initPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    _language = prefs.getString('language') ?? 'en';
-    _isFirstRun = prefs.getBool('isFirstRun') ?? true;
-    notifyListeners();
-    fetchNews();
-  }
-
-  Future<void> setLanguage(String lang) async {
-    _language = lang;
-    _isFirstRun = false;
-    _news = []; // Immediate UI feedback
-    _isLoading = true;
-    notifyListeners();
-    
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('language', lang);
-    await prefs.setBool('isFirstRun', false);
-    
-    // Refresh everything for the new language
-    await fetchCategories();
-    await fetchNews(reset: true);
-  }
 
   Future<void> fetchCategories() async {
-    // These now match our specialized RSS sources in sync.py
-    _categories = ['All', 'National', 'Politics', 'Technology', 'Sports', 'Entertainment', 'Business', 'International', 'Lifestyle'];
-    notifyListeners();
-  }
-
-  Future<void> triggerSync() async {
     try {
-      await _apiService.triggerSync();
+      final response = await _apiService.getCategories();
+      if (response != null && response['success']) {
+        categories = List<String>.from(response['data']);
+        notifyListeners();
+      }
     } catch (e) {
-      print('Sync Trigger Error: $e');
+      debugPrint('Error fetching categories: $e');
     }
   }
 
   Future<void> fetchNews({bool reset = false}) async {
-    if (_isLoading && !reset) return;
-    
     if (reset) {
-      _offset = 0;
-      _news = [];
+      news.clear();
+      notifyListeners();
     }
-
-    _isLoading = true;
+    
+    isLoading = true;
     notifyListeners();
 
     try {
-      final newArticles = await _apiService.getNews(
-        category: _activeCategory,
+      final response = await _apiService.getNews(
+        category: activeCategory,
         language: _language,
-        offset: _offset,
+        offset: reset ? 0 : news.length,
       );
-      
-      _news.addAll(newArticles);
-      _offset += newArticles.length;
+
+      if (response != null && response['success']) {
+        final List newArticles = response['data'];
+        news.addAll(newArticles.map((json) => NewsModel.fromJson(json)).toList());
+        isFirstRun = false;
+      }
     } catch (e) {
-      print('Provider Error: $e');
+      debugPrint('Error fetching news: $e');
     } finally {
-      _isLoading = false;
+      isLoading = false;
       notifyListeners();
     }
   }
 
   void setCategory(String category) {
-    _activeCategory = category;
+    activeCategory = category;
+    fetchNews(reset: true);
+  }
+
+  void setLanguage(String code) {
+    if (_language != code) {
+      _language = code;
+      news.clear(); // HARD PURGE
+      notifyListeners();
+      fetchNews(reset: true);
+    }
+  }
+
+  void triggerSync() async {
+    await _apiService.triggerSync();
     fetchNews(reset: true);
   }
 }
