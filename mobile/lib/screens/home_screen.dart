@@ -76,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Center(child: Text('No news found', style: TextStyle(color: Colors.white38)))
               else
                 RefreshIndicator(
+                  key: ValueKey(provider.language + provider.activeCategory),
                   onRefresh: () async {
                     await provider.fetchNews(reset: true);
                   },
@@ -318,3 +319,4 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+

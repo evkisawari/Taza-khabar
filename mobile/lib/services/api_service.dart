@@ -3,8 +3,8 @@ import '../models/article.dart';
 
 class ApiService {
   final Dio _dio = Dio(BaseOptions(
-    // Your machine's local IP address
-    baseUrl: 'http://192.168.29.63:8000',
+    // AWS Global Production Server
+    baseUrl: 'http://13.48.1.16:8000',
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 15),
   ));
@@ -31,7 +31,7 @@ class ApiService {
         retryCount++;
         print('API Attempt $retryCount failed: $e');
         if (retryCount >= maxRetries) return [];
-        await Future.delayed(const Duration(seconds: 2)); // Wait for server to wake up
+        await Future.delayed(const Duration(seconds: 2));
       }
     }
     return [];
@@ -58,3 +58,4 @@ class ApiService {
     }
   }
 }
+
