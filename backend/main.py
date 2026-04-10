@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.future import select
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 import asyncio
 import logging
 from database import init_db, AsyncSessionLocal
@@ -37,8 +37,6 @@ async def background_sync():
 async def root():
     return {"message": "Inshorts News API is running"}
 
-from sqlalchemy import desc, func
-
 @app.get("/api/status")
 async def get_status():
     async with AsyncSessionLocal() as db:
@@ -67,8 +65,10 @@ async def trigger_sync():
 async def get_news(category: str = "all", language: str = "en", limit: int = 10, offset: int = 0):
     async with AsyncSessionLocal() as db:
         query = select(Article)
+        
+        # PRO FIX: Case-insensitive category matching
         if category.lower() != "all":
-            query = query.filter(Article.category == category)
+            query = query.filter(func.lower(Article.category) == category.lower())
         
         query = query.filter(Article.language == language)
         query = query.order_by(desc(Article.is_trending), desc(Article.created_at)).offset(offset).limit(limit)
@@ -84,3 +84,4 @@ async def get_news(category: str = "all", language: str = "en", limit: int = 10,
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+鼓
