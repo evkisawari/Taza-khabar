@@ -1,26 +1,24 @@
 import 'package:flutter/material.dart';
-import '../models/news_model.dart';
+import '../models/article.dart';
 import '../services/api_service.dart';
 
 class NewsProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
   
-  List<NewsModel> news = [];
+  List<Article> news = [];
   List<String> categories = ['all'];
   String activeCategory = 'all';
   String _language = 'en'; // Default
   bool isLoading = false;
-  bool isFirstRun = true; // For language selection overlay
+  bool isFirstRun = true;
 
   String get language => _language;
 
   Future<void> fetchCategories() async {
     try {
-      final response = await _apiService.getCategories();
-      if (response != null && response['success']) {
-        categories = List<String>.from(response['data']);
-        notifyListeners();
-      }
+      final categoryList = await _apiService.getCategories();
+      categories = categoryList;
+      notifyListeners();
     } catch (e) {
       debugPrint('Error fetching categories: $e');
     }
@@ -36,15 +34,14 @@ class NewsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _apiService.getNews(
+      final fetchedNews = await _apiService.getNews(
         category: activeCategory,
         language: _language,
         offset: reset ? 0 : news.length,
       );
 
-      if (response != null && response['success']) {
-        final List newArticles = response['data'];
-        news.addAll(newArticles.map((json) => NewsModel.fromJson(json)).toList());
+      if (fetchedNews.isNotEmpty) {
+        news.addAll(fetchedNews);
         isFirstRun = false;
       }
     } catch (e) {
@@ -63,7 +60,7 @@ class NewsProvider with ChangeNotifier {
   void setLanguage(String code) {
     if (_language != code) {
       _language = code;
-      news.clear(); // HARD PURGE
+      news.clear(); // Total flush to prevent leaking
       notifyListeners();
       fetchNews(reset: true);
     }
@@ -74,3 +71,4 @@ class NewsProvider with ChangeNotifier {
     fetchNews(reset: true);
   }
 }
+
