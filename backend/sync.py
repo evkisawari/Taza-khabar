@@ -28,7 +28,7 @@ def clean_html(raw_html):
 
 def summarize(text, word_limit=70):
     if not text or len(text) < 40:
-        return "⚡ LIVE UPDATES: Developing story from our global bureaus. Tap 'Read More' for latest developments."
+        return "⚡ BREAKING: Live updates coming in from the ground. Developing situation. Tap 'Read More' for full coverage."
     words = text.split()
     if len(words) <= word_limit: return text
     snippet = " ".join(words[:word_limit])
@@ -56,6 +56,7 @@ async def fetch_direct_rss(source):
                         if enc.get('type', '').startswith('image/') or enc.get('url', '').lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                             image_url = enc.get('url'); break
                 if not image_url and 'media_content' in entry: image_url = entry.media_content[0]['url']
+                if not image_url and 'media_thumbnail' in entry: image_url = entry.media_thumbnail[0]['url']
                 if not image_url: image_url = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&q=80&w=1000'
 
                 raw_content = entry.get('description', entry.get('summary', ''))
@@ -66,13 +67,16 @@ async def fetch_direct_rss(source):
                 final_category = source['category']
                 is_trending = 0
                 
-                # --- PRO DRONE ATTACK DETECTOR ---
-                war_keywords = ["iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv", "हमास", "ईरान", "युद्ध"]
+                # --- PRO CRISIS KEYWORDS (BILINGUAL) ---
+                war_keywords = [
+                    "iran", "israel", "hezbollah", "missile", "drone", "war", "conflict", "tehran", "tel aviv", "attack", "strike", "drones",
+                    "हमास", "ईरान", "युद्ध", "मिसाइल", "ड्रोन", "हमला", "इजरायल", "तेहरान", "नेतन्याहू", "संघर्ष"
+                ]
                 search_text = (title + " " + short_content).lower()
                 
                 if any(kw in search_text for kw in war_keywords):
                     final_category = "Iran War"
-                    is_trending = 1 # FORCE IRAN WAR TO TOP
+                    is_trending = 1
 
                 articles.append(Article(
                     id=entry.get('id', entry.get('link', '')),
@@ -89,23 +93,32 @@ async def fetch_direct_rss(source):
                 ))
         return articles
     except Exception as e:
-        logger.error(f"Error fetching {source['name']}: {e}")
         return []
 
 async def sync_all_news():
-    logger.info(f"⚡ LIVE SYNC: Catching the Iran Crisis at {datetime.now()}")
+    logger.info(f"✨ ULTRA SYNC: High-Speed Mode at {datetime.now()}")
     sources = [
-        # --- CRISIS PRIORITY FEEDS ---
-        {'name': 'Google Conflict Live', 'url': 'https://news.google.com/rss/search?q=Iran+Israel+drone+attack+live&hl=en-IN&gl=IN&ceid=IN:en', 'category': 'Iran War', 'language': 'en'},
-        {'name': 'Indian Express War', 'url': 'https://indianexpress.com/section/world/feed/', 'category': 'International', 'language': 'en'},
-        {'name': 'The Hindu Global', 'url': 'https://www.thehindu.com/news/international/feeder/default.rss', 'category': 'International', 'language': 'en'},
-        {'name': 'NDTV World', 'url': 'https://www.ndtv.com/rss/world-news', 'category': 'International', 'language': 'en'},
+        # GLOBAL ENGLISH (Top Priority)
+        {'name': 'Google Live Conflict', 'url': 'https://news.google.com/rss/search?q=Iran+Israel+attack+live&hl=en-IN&gl=IN&ceid=IN:en', 'category': 'Iran War', 'language': 'en'},
+        {'name': 'Reuters World', 'url': 'https://www.reutersagency.com/feed/?best-topics=political-news&post_types=best', 'category': 'International', 'language': 'en'},
+        {'name': 'AP News', 'url': 'https://search.api.ap.org/v2/resources/items?format=rss', 'category': 'International', 'language': 'en'},
+        {'name': 'The Guardian', 'url': 'https://www.theguardian.com/world/rss', 'category': 'International', 'language': 'en'},
+        {'name': 'Al Jazeera', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'International', 'language': 'en'},
+        {'name': 'BBC World', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
+        {'name': 'Sky News', 'url': 'https://news.sky.com/feeds/rss/world.xml', 'category': 'International', 'language': 'en'},
         
-        # --- Standard Feeds ---
-        {'name': 'Google Live News', 'url': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en', 'category': 'National', 'language': 'en'},
-        {'name': 'India Today Live', 'url': 'https://www.indiatoday.in/rss/1206584', 'category': 'National', 'language': 'en'},
-        {'name': 'Aaj Tak Live', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
+        # INDIAN ENGLISH
+        {'name': 'The Hindu', 'url': 'https://www.thehindu.com/news/international/feeder/default.rss', 'category': 'International', 'language': 'en'},
+        {'name': 'Indian Express', 'url': 'https://indianexpress.com/section/world/feed/', 'category': 'International', 'language': 'en'},
+        {'name': 'NDTV World', 'url': 'https://www.ndtv.com/rss/world-news', 'category': 'International', 'language': 'en'},
+        {'name': 'Times of India', 'url': 'https://timesofindia.indiatimes.com/rssfeeds/296589292.cms', 'category': 'International', 'language': 'en'},
+        
+        # HINDI (Ultra Fast)
+        {'name': 'Aaj Tak', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},
+        {'name': 'NDTV India', 'url': 'https://ndtv.in/rss/ndtv-india-news.xml', 'category': 'National', 'language': 'hi'},
+        {'name': 'Navbharat Times', 'url': 'https://navbharattimes.indiatimes.com/world/rssfeedsection/2279801.cms', 'category': 'International', 'language': 'hi'},
+        {'name': 'Amar Ujala', 'url': 'https://www.amarujala.com/rss/world-news.xml', 'category': 'International', 'language': 'hi'},
     ]
     
     async with AsyncSessionLocal() as db:
@@ -120,18 +133,19 @@ async def sync_all_news():
                     existing = res.scalars().first()
                     
                     if existing:
-                        # PRO FEATURE: Update content if the reporter added new live info
+                        # INSHORTS LOGIC: If title or content changed, it's a LIVE UPDATE. Update it!
                         if existing.content != article.content or existing.title != article.title:
                             existing.content = article.content
                             existing.title = article.title
-                            existing.created_at = datetime.utcnow() # Bump to the top!
+                            existing.created_at = datetime.utcnow() # Push to top of feed
                             total_updated += 1
                         continue
                     
                     db.add(article)
                     total_added += 1
                 await db.commit()
-            logger.info(f"✅ Sync Finished: {total_added} New, {total_updated} LIVE UPDATES.")
+                await asyncio.sleep(0.1) # Prevent rate limiting
+            logger.info(f"✅ ULTRA SYNC FINISHED: Added {total_added}, Updated {total_updated} articles.")
         except Exception as e:
             logger.error(f"Sync failed: {e}")
             await db.rollback()
