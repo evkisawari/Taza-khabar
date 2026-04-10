@@ -42,33 +42,21 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: const Icon(Icons.menu, color: Colors.white, size: 22),
           onPressed: () => _showCategoryPicker(context),
         ),
-        title: GestureDetector(
-          onTap: () async {
-            // PRO SECRET: Tap 'My Feed' to force a total cloud sync
-            final provider = Provider.of<NewsProvider>(context, listen: false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('⚡ Forcing Cloud Sync...'), duration: Duration(seconds: 1))
-            );
-            await provider.triggerSync();
-            await Future.delayed(const Duration(seconds: 2));
-            await provider.fetchNews(reset: true);
-          },
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.refresh, color: Colors.redAccent, size: 16),
-              const SizedBox(width: 8),
-              Text(
-                'My Feed',
-                style: GoogleFonts.roboto(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.refresh, color: Colors.white24, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              'My Feed',
+              style: GoogleFonts.roboto(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
@@ -81,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, provider, child) {
           return Stack(
             children: [
+              // Main Feed
               if (provider.news.isEmpty && provider.isLoading)
                 const Center(child: CircularProgressIndicator(color: Colors.redAccent, strokeWidth: 2))
               else if (provider.news.isEmpty)
@@ -124,6 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
+              // 100% Copy: First Install Language Selection Overlay
               if (provider.isFirstRun)
                 Container(
                   color: Colors.black.withOpacity(0.95),
@@ -264,6 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const Divider(color: Colors.white10),
               const SizedBox(height: 10),
               
+              // Language Switcher Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -287,11 +278,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
               
+              // Sync Action
               ListTile(
                 leading: const Icon(Icons.sync, color: Colors.white54),
                 title: const Text('Refresh Content', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                onTap: () async {
-                  await provider.triggerSync();
+                onTap: () {
+                  provider.triggerSync();
                   Navigator.pop(context);
                 },
               ),
@@ -307,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: () {
         provider.setLanguage(code);
-        Navigator.pop(context);
+        Navigator.pop(context); // Close menu after change
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -327,4 +319,4 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-鼓
+

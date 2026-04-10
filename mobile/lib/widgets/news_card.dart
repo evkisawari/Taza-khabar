@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import '../models/article.dart';
 
 class NewsCard extends StatelessWidget {
@@ -13,6 +12,8 @@ class NewsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final bool isHindi = article.language == 'hi';
+    
+    // Choose font based on language
     final textStyle = isHindi ? GoogleFonts.notoSansDevanagari : GoogleFonts.roboto;
 
     return Container(
@@ -25,6 +26,7 @@ class NewsCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 1. Image Section
                   Stack(
                     children: [
                       CachedNetworkImage(
@@ -62,6 +64,8 @@ class NewsCard extends StatelessWidget {
                       ),
                     ],
                   ),
+
+                  // 2. Content Section
                   Expanded(
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
@@ -73,7 +77,7 @@ class NewsCard extends StatelessWidget {
                             article.title,
                             style: textStyle(
                               color: Colors.white.withOpacity(0.95),
-                              fontSize: isHindi ? 21 : 19,
+                              fontSize: isHindi ? 21 : 19, // Hindi looks better slightly larger
                               fontWeight: FontWeight.w700,
                               height: 1.3,
                             ),
@@ -90,7 +94,9 @@ class NewsCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 15),
                           Text(
-                            'short by ${article.author} / ${_getTimeAgo(article.createdAt, isHindi)}',
+                            isHindi 
+                              ? 'short by ${article.author} / ${article.createdAt.day} ${_getHindiMonth(article.createdAt.month)}'
+                              : 'short by ${article.author} / ${article.createdAt.day} ${_getMonthName(article.createdAt.month)}',
                             style: textStyle(
                               color: Colors.white24,
                               fontSize: 11,
@@ -105,6 +111,8 @@ class NewsCard extends StatelessWidget {
               ),
             ),
           ),
+          
+          // 3. Footer Bar
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
@@ -136,28 +144,13 @@ class NewsCard extends StatelessWidget {
     );
   }
 
-  String _getTimeAgo(DateTime dateTime, bool isHindi) {
-    Duration diff = DateTime.now().difference(dateTime);
-    if (diff.inDays >= 1) {
-      if (isHindi) {
-        return '${diff.inDays} दिन पहले';
-      }
-      return '${diff.inDays}d ago';
-    } else if (diff.inHours >= 1) {
-      if (isHindi) {
-        return '${diff.inHours} घंटे पहले';
-      }
-      return '${diff.inHours}h ago';
-    } else if (diff.inMinutes >= 1) {
-      if (isHindi) {
-        return '${diff.inMinutes} मिनट पहले';
-      }
-      return '${diff.inMinutes}m ago';
-    } else {
-      if (isHindi) {
-        return 'अभी-अभी';
-      }
-      return 'just now';
-    }
+  String _getMonthName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
+  String _getHindiMonth(int month) {
+    const months = ['जनवरी', 'फ़रवरी', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'];
+    return months[month - 1];
   }
 }
