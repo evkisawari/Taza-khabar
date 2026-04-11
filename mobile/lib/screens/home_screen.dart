@@ -175,7 +175,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showCategoryPicker(BuildContext context) {
     final provider = Provider.of<NewsProvider>(context, listen: false);
-    final categories = provider.categories.map((c) => {'id': c, 'name': c == 'all' ? 'All News' : c}).toList();
+    final categories = provider.categories.map((c) => {
+      'id': c, 
+      'name': c.toLowerCase() == 'all' ? 'All News' : c
+    }).toList();
 
     showModalBottomSheet(
       context: context,

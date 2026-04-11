@@ -21,31 +21,55 @@ def clean_html(raw_html):
     
     # 1. Parse with BeautifulSoup first to strip tags safely
     soup = BeautifulSoup(raw_html, "lxml")
-    for s in soup(["script", "style", "nav", "footer", "iframe"]):
+    for s in soup(["script", "style", "nav", "footer", "iframe", "header", "button"]):
         s.decompose()
         
-    text = soup.get_text(separator='\n')
+    text = soup.get_text(separator=' ')
     text = html_parser.unescape(text)
     
-    # 2. Aggressive Metadata Filtering
+    # 2. Filtering out ghost lines and persistent metadata
     meta_keywords = [
         "Article URL:", "Comments URL:", "Points:", "# Comments:", 
         "Source:", "Source Link:", "Read more at:", "Read more:", 
-        "Source Name:", "The post appeared first on", "Check out more"
+        "Source Name:", "The post appeared first on", "Check out more",
+        "Subscribe to", "Follow us on", "Click here to", "ALSO READ",
+        "Copyright", "All rights reserved"
     ]
     
-    lines = text.split('\n')
-    cleaned_parts = [l.strip() for l in lines if l.strip() and not any(k.lower() in l.lower() for k in meta_keywords)]
+    # Split by periods or suggestive breaks to filter individual sentences
+    sentences = re.split(r'(?<=[.।!|])\s+', text)
+    cleaned_sentences = []
+    for s in sentences:
+        s = s.strip()
+        if not s: continue
+        # Ignore sentences that are too short or contain metadata keywords
+        if len(s) < 10: continue
+        if any(k.lower() in s.lower() for k in meta_keywords): continue
+        # Ignore ghost text placeholders
+        if s.lower() in ["loading...", "read more", "continue reading"]: continue
+        cleaned_sentences.append(s)
     
-    # 3. Final Rejoin and Cleanup
-    text = " ".join(cleaned_parts)
-    text = re.sub(r'https?://\S+', '', text)
+    # 3. Final Rejoin
+    text = " ".join(cleaned_sentences)
+    text = re.sub(r'https?://\S+', '', text) # Final URL safety
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
 
+def clean_title(title):
+    if not title: return ""
+    # Remove bilingual separators usually like "Title in Hindi | Title in English"
+    if '|' in title:
+        parts = title.split('|')
+        # Keep the one that matches the language? Or just keep the first part for brevity.
+        # Usually first part is the primary title.
+        title = parts[0].strip()
+    if ' - ' in title:
+        title = title.split(' - ')[0].strip()
+    return title.strip()
+
 def summarize(text, word_limit=70):
-    if not text or len(text.strip()) < 15:
+    if not text or len(text.strip()) < 20:
         return "Latest updates from our reporting partners. You can tap 'Read More' to view the exhaustive coverage on the official source website."
     
     words = text.split()
@@ -55,16 +79,18 @@ def summarize(text, word_limit=70):
     # Take first N words and try to end at a sentence break for smoothness
     snippet = " ".join(words[:word_limit])
     
-    # Support both English (.) and Hindi (।) and (|) sentence endings
-    last_dot = snippet.rfind('.')
-    last_purna_viraam = snippet.rfind('।')
-    last_pipe = snippet.rfind('|')
+    # Support both English (.) and Hindi (।) and (|) and (!) sentence endings
+    ends = [snippet.rfind('.'), snippet.rfind('।'), snippet.rfind('|'), snippet.rfind('!')]
+    cutoff = max(ends)
     
-    cutoff = max(last_dot, last_purna_viraam, last_pipe)
-    
-    if cutoff != -1 and cutoff > len(snippet) // 2:
+    # Only cutoff if the sentence is reasonably long, otherwise use ...
+    if cutoff != -1 and cutoff > (len(snippet) * 0.6):
         snippet = snippet[:cutoff + 1]
     else:
+        # Try to find a space near the limit to avoid cutting words
+        last_space = snippet.rfind(' ')
+        if last_space != -1:
+            snippet = snippet[:last_space]
         snippet += "..."
         
     return snippet
@@ -128,13 +154,14 @@ async def fetch_direct_rss(source):
                     
                 clean_content = clean_html(raw_content)
                 short_content = summarize(clean_content)
+                cleaned_title = clean_title(entry.get('title', ''))
                 
                 # Generate a unique ID that includes both link and title for Live Updates
-                unique_id = f"{entry.get('link', '')}_{entry.get('title', '')}"
+                unique_id = f"{entry.get('link', '')}_{cleaned_title}"
                 
                 articles.append(Article(
                     id=unique_id,
-                    title=entry.get('title'),
+                    title=cleaned_title,
                     content=short_content,
                     author=entry.get('author', source['name']),
                     image_url=image_url,
@@ -143,7 +170,7 @@ async def fetch_direct_rss(source):
                     category=source['category'],
                     language=source.get('language', 'en'),
                     created_at=datetime.utcnow(),
-                    is_trending=1 if 'trending' in entry.get('title', '').lower() else 0
+                    is_trending=1 if 'trending' in cleaned_title.lower() else 0
                 ))
         return articles
     except Exception as e:
@@ -164,6 +191,7 @@ async def sync_all_news():
         {'name': 'Hindustan Times', 'url': 'https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml', 'category': 'National', 'language': 'en'},
         {'name': 'News18 National', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/india.xml', 'category': 'National', 'language': 'en'},
         {'name': 'News18 Politics', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/politics.xml', 'category': 'Politics', 'language': 'en'},
+        {'name': 'NDTV Politics', 'url': 'https://feeds.feedburner.com/ndtvnews-india-news', 'category': 'Politics', 'language': 'en'},
         {'name': 'NDTV Sports', 'url': 'https://feeds.feedburner.com/ndtvsports-latest', 'category': 'Sports', 'language': 'en'},
         {'name': 'Gadgets 360', 'url': 'https://feeds.feedburner.com/gadgets360-latest', 'category': 'Technology', 'language': 'en'},
         {'name': 'News18 Movies', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/movies.xml', 'category': 'Entertainment', 'language': 'en'},
@@ -172,6 +200,7 @@ async def sync_all_news():
         {'name': 'NDTV Profit', 'url': 'https://feeds.feedburner.com/ndtvprofit-latest', 'category': 'Business', 'language': 'en'},
         {'name': 'Economic Times', 'url': 'https://economictimes.indiatimes.com/rssfeedstopstories.cms', 'category': 'Business', 'language': 'en'},
         {'name': 'News18 Lifestyle', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/lifestyle.xml', 'category': 'Lifestyle', 'language': 'en'},
+        {'name': 'Times of India Lifestyle', 'url': 'https://timesofindia.indiatimes.com/rssfeeds/2886704.cms', 'category': 'Lifestyle', 'language': 'en'},
         
         # --- HINDI SOURCES (MASTER LIST) ---
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},
@@ -179,12 +208,14 @@ async def sync_all_news():
         {'name': 'NDTV India', 'url': 'https://ndtv.in/rss/ndtv-india-news.xml', 'category': 'National', 'language': 'hi'},
         {'name': 'Amar Ujala', 'url': 'https://www.amarujala.com/rss/breaking-news.xml', 'category': 'Politics', 'language': 'hi'},
         {'name': 'Dainik Jagran', 'url': 'http://rss.jagran.com/local/uttar-pradesh/lucknow-city.xml', 'category': 'Politics', 'language': 'hi'},
+        {'name': 'Navbharat Times Politics', 'url': 'https://navbharattimes.indiatimes.com/rssfeeds/2276800.cms', 'category': 'Politics', 'language': 'hi'},
         {'name': 'BBC Hindi', 'url': 'https://feeds.bbci.co.uk/hindi/rss.xml', 'category': 'International', 'language': 'hi'},
         {'name': 'Bhaskar Bollywood', 'url': 'https://www.bhaskar.com/rss-v1--category-11215.xml', 'category': 'Entertainment', 'language': 'hi'},
         {'name': 'Bhaskar Tech', 'url': 'https://www.bhaskar.com/rss-v1--category-5707.xml', 'category': 'Technology', 'language': 'hi'},
         {'name': 'Bhaskar Sports', 'url': 'https://www.bhaskar.com/rss-v1--category-1053.xml', 'category': 'Sports', 'language': 'hi'},
         {'name': 'Bhaskar Business', 'url': 'https://www.bhaskar.com/rss-v1--category-1051.xml', 'category': 'Business', 'language': 'hi'},
         {'name': 'Bhaskar Women', 'url': 'https://www.bhaskar.com/rss-v1--category-1532.xml', 'category': 'Lifestyle', 'language': 'hi'},
+        {'name': 'News18 Hindi Lifestyle', 'url': 'https://hindi.news18.com/commonfeeds/v1/hin/rss/lifestyle.xml', 'category': 'Lifestyle', 'language': 'hi'},
         {'name': 'Bhaskar Career', 'url': 'https://www.bhaskar.com/rss-v1--category-11945.xml', 'category': 'Technology', 'language': 'hi'},
         {'name': 'Bhaskar International', 'url': 'https://www.bhaskar.com/rss-v1--category-1125.xml', 'category': 'International', 'language': 'hi'},
         {'name': 'Google News National', 'url': 'https://news.google.com/rss/headlines/section/topic/NATION?hl=en-IN&gl=IN&ceid=IN:en', 'category': 'National', 'language': 'en'},
