@@ -19,36 +19,33 @@ def clean_html(raw_html):
     if not raw_html:
         return ""
     
-    # 1. Unescape HTML entities
-    text = html_parser.unescape(raw_html)
+    # 1. Parse with BeautifulSoup first to strip tags safely
+    soup = BeautifulSoup(raw_html, "lxml")
+    for s in soup(["script", "style", "nav", "footer", "iframe"]):
+        s.decompose()
+        
+    text = soup.get_text(separator='\n')
+    text = html_parser.unescape(text)
     
-    # 2. Aggressive Metadata Filtering (Crucial for Inshorts style)
+    # 2. Aggressive Metadata Filtering
     meta_keywords = [
         "Article URL:", "Comments URL:", "Points:", "# Comments:", 
         "Source:", "Source Link:", "Read more at:", "Read more:", 
         "Source Name:", "The post appeared first on", "Check out more"
     ]
     
-    # Split into lines and filter out metadata rows
-    lines = re.split(r'<p>|<div>|<br>|\n|<li>', text, flags=re.IGNORECASE)
+    lines = text.split('\n')
     cleaned_parts = [l.strip() for l in lines if l.strip() and not any(k.lower() in l.lower() for k in meta_keywords)]
     
-    # Rejoin and let BeautifulSoup handle tags
+    # 3. Final Rejoin and Cleanup
     text = " ".join(cleaned_parts)
-    soup = BeautifulSoup(text, "lxml")
-    for s in soup(["script", "style", "nav", "footer", "iframe"]):
-        s.decompose()
-    
-    text = soup.get_text(separator=' ')
-    
-    # 3. Final regex cleanup
-    text = re.sub(r'https?://\S+', '', text) # Remove residual URLs
+    text = re.sub(r'https?://\S+', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
 
 def summarize(text, word_limit=70):
-    if not text or len(text) < 40:
+    if not text or len(text.strip()) < 15:
         return "Latest updates from our reporting partners. You can tap 'Read More' to view the exhaustive coverage on the official source website."
     
     words = text.split()
@@ -58,13 +55,14 @@ def summarize(text, word_limit=70):
     # Take first N words and try to end at a sentence break for smoothness
     snippet = " ".join(words[:word_limit])
     
-    # Support both English (.) and Hindi (।) sentence endings
+    # Support both English (.) and Hindi (।) and (|) sentence endings
     last_dot = snippet.rfind('.')
     last_purna_viraam = snippet.rfind('।')
+    last_pipe = snippet.rfind('|')
     
-    cutoff = max(last_dot, last_purna_viraam)
+    cutoff = max(last_dot, last_purna_viraam, last_pipe)
     
-    if cutoff != -1:
+    if cutoff != -1 and cutoff > len(snippet) // 2:
         snippet = snippet[:cutoff + 1]
     else:
         snippet += "..."
@@ -95,7 +93,12 @@ async def fetch_direct_rss(source):
                     image_url = entry.media_thumbnail[0]['url']
 
                 if not image_url:
-                    content_to_scrape = entry.get('description', '') + entry.get('summary', '')
+                    content_list = entry.get('content', [])
+                    if content_list and content_list[0].value:
+                        content_to_scrape = content_list[0].value
+                    else:
+                        content_to_scrape = entry.get('description', '') + entry.get('summary', '')
+                        
                     if content_to_scrape:
                         soup = BeautifulSoup(content_to_scrape, "lxml")
                         img = soup.find("img")
@@ -117,7 +120,12 @@ async def fetch_direct_rss(source):
                     image_url = category_placeholders.get(source['category'], 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&q=80&w=1000')
 
                 # Advanced Cleanup and Summarization
-                raw_content = entry.get('description', entry.get('summary', ''))
+                content_list = entry.get('content', [])
+                if content_list and content_list[0].value:
+                    raw_content = content_list[0].value
+                else:
+                    raw_content = entry.get('description', entry.get('summary', ''))
+                    
                 clean_content = clean_html(raw_content)
                 short_content = summarize(clean_content)
                 
@@ -155,6 +163,7 @@ async def sync_all_news():
         {'name': 'The Indian Express', 'url': 'https://indianexpress.com/section/india/feed/', 'category': 'National', 'language': 'en'},
         {'name': 'Hindustan Times', 'url': 'https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml', 'category': 'National', 'language': 'en'},
         {'name': 'News18 National', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/india.xml', 'category': 'National', 'language': 'en'},
+        {'name': 'News18 Politics', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/politics.xml', 'category': 'Politics', 'language': 'en'},
         {'name': 'NDTV Sports', 'url': 'https://feeds.feedburner.com/ndtvsports-latest', 'category': 'Sports', 'language': 'en'},
         {'name': 'Gadgets 360', 'url': 'https://feeds.feedburner.com/gadgets360-latest', 'category': 'Technology', 'language': 'en'},
         {'name': 'News18 Movies', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/movies.xml', 'category': 'Entertainment', 'language': 'en'},
@@ -162,6 +171,7 @@ async def sync_all_news():
         {'name': 'HT Entertainment', 'url': 'https://www.hindustantimes.com/feeds/rss/entertainment/rssfeed.xml', 'category': 'Entertainment', 'language': 'en'},
         {'name': 'NDTV Profit', 'url': 'https://feeds.feedburner.com/ndtvprofit-latest', 'category': 'Business', 'language': 'en'},
         {'name': 'Economic Times', 'url': 'https://economictimes.indiatimes.com/rssfeedstopstories.cms', 'category': 'Business', 'language': 'en'},
+        {'name': 'News18 Lifestyle', 'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/lifestyle.xml', 'category': 'Lifestyle', 'language': 'en'},
         
         # --- HINDI SOURCES (MASTER LIST) ---
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},

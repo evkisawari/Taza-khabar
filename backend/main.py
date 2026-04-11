@@ -70,7 +70,7 @@ async def get_news(category: str = "all", language: str = "en", limit: int = 10,
             query = query.filter(Article.category == category)
         
         query = query.filter(Article.language == language)
-        query = query.order_by(desc(Article.is_trending), desc(Article.created_at)).offset(offset).limit(limit)
+        query = query.order_by(desc(Article.created_at)).offset(offset).limit(limit)
         
         result = await db.execute(query)
         articles = result.scalars().all()
