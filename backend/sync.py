@@ -128,12 +128,24 @@ async def fetch_article_body(url):
             
             if best_element:
                 paragraphs = best_element.find_all('p')
-                main_content = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 40])
+                # Filter out paragraphs that look like cookie walls or UI instructions
+                junk_keywords = ["cookie", "consent", "accept all", "reject all", "privacy policy", "terms of service", "subscribe now", "sign in", "loading..."]
+                valid_ps = []
+                for p in paragraphs:
+                    p_text = p.get_text().strip()
+                    if len(p_text) > 50 and not any(k in p_text.lower() for k in junk_keywords):
+                        valid_ps.append(p_text)
+                main_content = " ".join(valid_ps)
             
-            # Fallback to all P tags if no clear body found
+            # Fallback to all P tags if no clear body found, with same junk filter
             if not main_content or len(main_content) < 100:
                 paragraphs = soup.find_all('p')
-                main_content = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 40])
+                valid_ps = []
+                for p in paragraphs:
+                    p_text = p.get_text().strip()
+                    if len(p_text) > 50 and not any(k in p_text.lower() for k in junk_keywords):
+                        valid_ps.append(p_text)
+                main_content = " ".join(valid_ps)
 
             return clean_html(main_content)
     except:
