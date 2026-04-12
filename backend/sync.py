@@ -100,6 +100,45 @@ def summarize(text, word_limit=70):
         
     return snippet
 
+async def fetch_article_body(url):
+    """Deep Scrapes the actual news website to get the real story."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=10.0) as client:
+            response = await client.get(url)
+            if response.status_code != 200: return None
+            
+            soup = BeautifulSoup(response.text, "lxml")
+            
+            # Remove noise
+            for s in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                s.decompose()
+
+            # Strategy: Find the div with the most paragraphs
+            main_content = ""
+            potential_bodies = soup.find_all(['div', 'article', 'section'])
+            best_element = None
+            max_p = 0
+            
+            for element in potential_bodies:
+                p_count = len(element.find_all('p', recursive=False))
+                if p_count > max_p:
+                    max_p = p_count
+                    best_element = element
+            
+            if best_element:
+                paragraphs = best_element.find_all('p')
+                main_content = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 40])
+            
+            # Fallback to all P tags if no clear body found
+            if not main_content or len(main_content) < 100:
+                paragraphs = soup.find_all('p')
+                main_content = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 40])
+
+            return clean_html(main_content)
+    except:
+        return None
+
 async def fetch_direct_rss(source):
     articles = []
     try:
@@ -108,7 +147,8 @@ async def fetch_direct_rss(source):
             response = await client.get(source['url'])
             feed = feedparser.parse(response.text)
             
-            for entry in feed.entries:
+            # Limit to top 5 articles per source for Deep Scraping to keep it fast
+            for entry in feed.entries[:5]:
                 # Robust Image Extraction
                 image_url = None
                 if 'enclosures' in entry and entry.enclosures:
@@ -123,55 +163,31 @@ async def fetch_direct_rss(source):
                 if not image_url and 'media_thumbnail' in entry:
                     image_url = entry.media_thumbnail[0]['url']
 
-                if not image_url:
-                    content_list = entry.get('content', [])
-                    if content_list and content_list[0].value:
-                        content_to_scrape = content_list[0].value
-                    else:
-                        content_to_scrape = entry.get('description', '') + entry.get('summary', '')
-                        
-                    if content_to_scrape:
-                        soup = BeautifulSoup(content_to_scrape, "lxml")
-                        img = soup.find("img")
-                        if img and img.get("src"):
-                            image_url = img.get("src")
-
-                # Premium Fallback Images based on Inshorts Categories
-                category_placeholders = {
-                    'Technology': 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?auto=format&fit=crop&q=80&w=1000',
-                    'Business': 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=1000',
-                    'Sports': 'https://images.unsplash.com/photo-1461896641502-47db8c966ff7?auto=format&fit=crop&q=80&w=1000',
-                    'International': 'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?auto=format&fit=crop&q=80&w=1000',
-                    'Entertainment': 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&q=80&w=1000',
-                    'Startup': 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?auto=format&fit=crop&q=80&w=1000',
-                    'Politics': 'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?auto=format&fit=crop&q=80&w=1000',
-                }
-
-                if not image_url or 'via.placeholder' in image_url:
-                    image_url = category_placeholders.get(source['category'], 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&q=80&w=1000')
-
-                # Advanced Cleanup and Summarization
-                content_list = entry.get('content', [])
-                if content_list and content_list[0].value:
-                    raw_content = content_list[0].value
-                else:
-                    raw_content = entry.get('description', entry.get('summary', ''))
-                    
-                clean_content = clean_html(raw_content)
-                short_content = summarize(clean_content)
-                cleaned_title = clean_title(entry.get('title', ''))
+                # Deep Scrape for high quality content
+                article_url = entry.get('link')
+                full_body = await fetch_article_body(article_url)
                 
-                # Generate a unique ID that includes both link and title for Live Updates
-                unique_id = f"{entry.get('link', '')}_{cleaned_title}"
+                if full_body and len(full_body) > 100:
+                    clean_content = full_body
+                else:
+                    # Fallback to RSS description if scraping fails
+                    desc = entry.get('description', entry.get('summary', ''))
+                    clean_content = clean_html(desc)
+
+                short_content = summarize(clean_content, word_limit=60)
+                cleaned_title = clean_title(entry.get('title', ''))
+
+                # Generate a unique ID
+                unique_id = f"{article_url}_{cleaned_title}"
                 
                 articles.append(Article(
                     id=unique_id,
                     title=cleaned_title,
                     content=short_content,
                     author=entry.get('author', source['name']),
-                    image_url=image_url,
+                    image_url=image_url if image_url else 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&q=80&w=1000',
                     source_name=source['name'],
-                    source_url=entry.get('link'),
+                    source_url=article_url,
                     category=source['category'],
                     language=source.get('language', 'en'),
                     created_at=datetime.utcnow(),
