@@ -10,6 +10,20 @@ from database import AsyncSessionLocal
 from models import Article
 from sqlalchemy.future import select
 from sqlalchemy import or_, func, desc
+import os
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure Google Gemini
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    model = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +34,7 @@ def clean_html(raw_html):
         return ""
     
     # 1. Parse with BeautifulSoup first to strip tags safely
-    soup = BeautifulSoup(raw_html, "lxml")
+    soup = BeautifulSoup(raw_html, "html.parser")
     for s in soup(["script", "style", "nav", "footer", "iframe", "header", "button"]):
         s.decompose()
         
@@ -73,45 +87,101 @@ def clean_title(title):
     title = re.sub(r'\s+', ' ', title).strip()
     return title.strip()
 
-def summarize(text, word_limit=70):
-    if not text or len(text.strip()) < 20:
+async def summarize(text, language='en'):
+    """Professional summarizer with Gemini support and strict word count fallback."""
+    if not text or len(text.strip()) < 50:
         return "Latest updates from our reporting partners. You can tap 'Read More' to view the exhaustive coverage on the official source website."
-    
-    words = text.split()
-    if len(words) <= word_limit:
-        return text
-    
-    # Take first N words and try to end at a sentence break for smoothness
-    snippet = " ".join(words[:word_limit])
-    
-    # Support both English (.) and Hindi (।) and (|) and (!) sentence endings
-    ends = [snippet.rfind('.'), snippet.rfind('।'), snippet.rfind('|'), snippet.rfind('!')]
-    cutoff = max(ends)
-    
-    # Only cutoff if the sentence is reasonably long, otherwise use ...
-    if cutoff != -1 and cutoff > (len(snippet) * 0.6):
-        snippet = snippet[:cutoff + 1]
-    else:
-        # Try to find a space near the limit to avoid cutting words
-        last_space = snippet.rfind(' ')
-        if last_space != -1:
-            snippet = snippet[:last_space]
-        snippet += "..."
-        
-    return snippet
 
-from newspaper import Article as NewsArticle
+    # Remove any existing trailing ellipses from raw text
+    text = text.strip().rstrip('.')
+
+    # --- ATTEMPT PRO GEMINI SUMMARIZATION ---
+    if model:
+        try:
+            prompt = f"""
+            Summarize this news in {language} like a professional news editor (Inshorts style).
+            RULES:
+            1. Length: Exactly between 60 to 80 words.
+            2. Content: Cover Who, What, Where, When, and Why.
+            3. Flow: Professional, engaging, and clear.
+            4. Ending: MUST end with a full stop (.). NEVER use ellipses (...).
+            5. Pure Text: No markdown, no "Read more", no labels.
+            
+            Article: {text}
+            """
+            response = await model.generate_content_async(prompt)
+            summary = response.text.strip()
+            
+            # Strict word count verification
+            word_count = len(re.findall(r'\w+', summary))
+            if 55 <= word_count <= 85 and not summary.endswith('...'):
+                return summary
+            logger.warning(f"Gemini summary rejected (word count: {word_count}). Falling back.")
+        except Exception as e:
+            logger.error(f"Gemini Summarization error: {e}")
+
+    # --- FALLBACK: HIGH QUALITY ALGORITHMIC SUMMARIZATION ---
+    # Tokenize into sentences
+    sentences = re.split(r'(?<=[.।!|])\s+', text)
+    cleaned_sentences = [s.strip() for s in sentences if len(s.split()) > 5]
+    
+    if not cleaned_sentences:
+        return text[:300].strip() + "."
+
+    result_summary = ""
+    current_word_count = 0
+    
+    for sentence in cleaned_sentences:
+        sentence_words = len(sentence.split())
+        if current_word_count + sentence_words <= 85:
+            result_summary += " " + sentence
+            current_word_count += sentence_words
+        else:
+            # If we haven't reached min 55 words, try to take a part of this sentence
+            if current_word_count < 55:
+                needed = 65 - current_word_count
+                partial = " ".join(sentence.split()[:needed])
+                # Clean up partial sentence
+                partial = re.sub(r'[,;:\s]+$', '', partial) + "."
+                result_summary += " " + partial
+            break
+            
+    result_summary = result_summary.strip()
+    
+    # Final cleanup to ensure no ellipses and good word count
+    final_words = result_summary.split()
+    if len(final_words) > 85:
+        result_summary = " ".join(final_words[:80]) + "."
+    elif len(final_words) < 55:
+        # If still too short, pad with original content up to limit
+        pass 
+
+    # Ensure no triple dots
+    result_summary = result_summary.replace("...", ".")
+    if not result_summary.endswith(('.', '।', '!', '|')):
+        result_summary += "."
+        
+    return result_summary
+
+import trafilatura
 import concurrent.futures
+import nltk
+
+# Ensure the grammar tools are downloaded for summarizing
+try:
+    nltk.download('punkt', quiet=True)
+except:
+    pass
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
-def scrape_with_newspaper(url):
-    """Sync wrapper for newspaper4k"""
+def scrape_with_trafilatura(url):
+    """Sync wrapper for trafilatura"""
     try:
-        article = NewsArticle(url)
-        article.download()
-        article.parse()
-        return article.text
+        downloaded = trafilatura.fetch_url(url)
+        if downloaded:
+            return trafilatura.extract(downloaded)
+        return None
     except:
         return None
 
@@ -119,7 +189,7 @@ async def fetch_article_body(url):
     """Offloads the heavy scraping to a thread pool for maximum speed."""
     loop = asyncio.get_event_loop()
     try:
-        body = await loop.run_in_executor(executor, scrape_with_newspaper, url)
+        body = await loop.run_in_executor(executor, scrape_with_trafilatura, url)
         if body and len(body.strip()) > 100:
             # Check for junk keywords
             junk = ["cookie", "consent", "accept all", "reject all", "privacy policy", "more options", "g.co/", "privacytools"]
@@ -165,7 +235,7 @@ async def fetch_direct_rss(source):
                     desc = entry.get('description', entry.get('summary', ''))
                     clean_content = clean_html(desc)
 
-                short_content = summarize(clean_content, word_limit=60)
+                short_content = await summarize(clean_content, language=source.get('language', 'en'))
                 cleaned_title = clean_title(entry.get('title', ''))
 
                 # Generate a unique ID
