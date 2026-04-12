@@ -58,14 +58,19 @@ def clean_html(raw_html):
 
 def clean_title(title):
     if not title: return ""
-    # Remove bilingual separators usually like "Title in Hindi | Title in English"
+    
+    # 1. Unescape HTML entities (converts &#039; to ', &amp; to &, etc.)
+    title = html_parser.unescape(title)
+    
+    # 2. Remove bilingual separators usually like "Title in Hindi | Title in English"
     if '|' in title:
         parts = title.split('|')
-        # Keep the one that matches the language? Or just keep the first part for brevity.
-        # Usually first part is the primary title.
         title = parts[0].strip()
     if ' - ' in title:
         title = title.split(' - ')[0].strip()
+        
+    # 3. Final cleanup of whitespace and stray characters
+    title = re.sub(r'\s+', ' ', title).strip()
     return title.strip()
 
 def summarize(text, word_limit=70):
