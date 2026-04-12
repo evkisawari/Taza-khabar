@@ -8,3 +8,5 @@ python-dotenv
 feedparser
 beautifulsoup4
 lxml
+newspaper4k
+nltk
