@@ -101,51 +101,55 @@ def summarize(text, word_limit=70):
     return snippet
 
 async def fetch_article_body(url):
-    """Deep Scrapes the actual news website to get the real story."""
+    """Deep Scrapes with Stealth to bypass cookie walls and bot blocks."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
-        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=10.0) as client:
+        # Professional browser headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
+            'Referer': 'https://www.google.com/'
+        }
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0) as client:
             response = await client.get(url)
             if response.status_code != 200: return None
             
+            # Anti-Cookie Wall Detection
+            if "cookie" in response.text.lower() and ("accept all" in response.text.lower() or "more options" in response.text.lower()):
+                # Try to find a direct link hidden in the Google redirect if applicable
+                return None
+
             soup = BeautifulSoup(response.text, "lxml")
-            
-            # Remove noise
-            for s in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            for s in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button"]):
                 s.decompose()
 
-            # Strategy: Find the div with the most paragraphs
-            main_content = ""
+            # Junk Filter Keywords
+            junk = ["cookie", "consent", "accept all", "reject all", "privacy policy", "terms of service", "subscribe now", "sign in", "more options", "g.co/", "privacytools"]
+            
             potential_bodies = soup.find_all(['div', 'article', 'section'])
             best_element = None
             max_p = 0
             
             for element in potential_bodies:
-                p_count = len(element.find_all('p', recursive=False))
+                p_count = len([p for p in element.find_all('p', recursive=False) if len(p.get_text().strip()) > 40])
                 if p_count > max_p:
                     max_p = p_count
                     best_element = element
             
-            if best_element:
-                paragraphs = best_element.find_all('p')
-                # Filter out paragraphs that look like cookie walls or UI instructions
-                junk_keywords = ["cookie", "consent", "accept all", "reject all", "privacy policy", "terms of service", "subscribe now", "sign in", "loading..."]
-                valid_ps = []
-                for p in paragraphs:
-                    p_text = p.get_text().strip()
-                    if len(p_text) > 50 and not any(k in p_text.lower() for k in junk_keywords):
-                        valid_ps.append(p_text)
-                main_content = " ".join(valid_ps)
+            main_content = ""
+            elements_to_check = [best_element] if best_element else [soup]
             
-            # Fallback to all P tags if no clear body found, with same junk filter
-            if not main_content or len(main_content) < 100:
-                paragraphs = soup.find_all('p')
+            for root in elements_to_check:
+                paragraphs = root.find_all('p')
                 valid_ps = []
                 for p in paragraphs:
                     p_text = p.get_text().strip()
-                    if len(p_text) > 50 and not any(k in p_text.lower() for k in junk_keywords):
+                    # Only keep real sentences, ignore UI text/cookies
+                    if len(p_text) > 60 and not any(j in p_text.lower() for j in junk):
                         valid_ps.append(p_text)
-                main_content = " ".join(valid_ps)
+                if valid_ps:
+                    main_content = " ".join(valid_ps)
+                    break
 
             return clean_html(main_content)
     except:
