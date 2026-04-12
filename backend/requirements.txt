@@ -1,3 +1,4 @@
+# Professional News Extraction Engine
 fastapi
 uvicorn
 httpx
