@@ -30,11 +30,20 @@ from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 
 from groq import Groq
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def get_groq_client():
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        logger.error("❌ CRITICAL: GROQ_API_KEY is missing from .env!")
+        return None
+    return Groq(api_key=key)
 
 def groq_summarize(text, language="english"):
     """High-speed AI Summarization using Groq"""
     if not text or len(text) < 100: return text
+    
+    client = get_groq_client()
+    if not client: return text[:400] + "..."
     
     try:
         prompt = f"""
@@ -51,7 +60,7 @@ def groq_summarize(text, language="english"):
         {text[:4000]}
         """
         
-        chat_completion = groq_client.chat.completions.create(
+        chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-70b-8192",
             temperature=0.5,
