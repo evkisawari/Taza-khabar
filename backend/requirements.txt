@@ -10,7 +10,6 @@ feedparser
 beautifulsoup4
 lxml
 python-dotenv
-google-generativeai
 sumy
 nltk
 trafilatura
