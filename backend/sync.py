@@ -179,17 +179,19 @@ async def fetch_direct_rss(source):
 
 async def sync_all_news():
     logger.info("--- Starting Parallel Pro News Sync ---")
-    # (Sources list remains same)
     sources = [
         {'name': 'The Hindu National', 'url': 'https://www.thehindu.com/news/national/feeder/default.rss', 'category': 'National', 'language': 'en'},
         {'name': 'TOI News', 'url': 'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms', 'category': 'National', 'language': 'en'},
         {'name': 'BBC World News', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
         {'name': 'Al Jazeera Conflicts', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
         {'name': 'Reuters Politics', 'url': 'https://www.reutersagency.com/feed/?best-topics=political-news&post_type=best', 'category': 'Politics', 'language': 'en'},
+        
+        # --- HIGH QUALITY HINDI SOURCES ---
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},
         {'name': 'Aaj Tak Home', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
-        {'name': 'Aaj Tak World', 'url': 'https://www.aajtak.in/rssfeeds/?id=world', 'category': 'International', 'language': 'hi'},
-        {'name': 'Navbharat Times Politics', 'url': 'https://navbharattimes.indiatimes.com/rssfeeds/2276856.cms', 'category': 'Politics', 'language': 'hi'}
+        {'name': 'Aaj Tak International', 'url': 'https://www.aajtak.in/rssfeeds/?id=world', 'category': 'International', 'language': 'hi'},
+        {'name': 'Aaj Tak Politics', 'url': 'https://www.aajtak.in/rssfeeds/?id=politics', 'category': 'Politics', 'language': 'hi'},
+        {'name': 'Bhaskar Videsh', 'url': 'https://www.bhaskar.com/rss-v1--category-1068.xml', 'category': 'International', 'language': 'hi'}
     ]
     
     import random
