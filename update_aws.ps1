@@ -24,8 +24,8 @@ $sshKeyPath = (Resolve-Path $PEM_NAME).Path
 # Securely upload the .env file (since it's ignored by git)
 Get-Content "backend/.env" | & "$SSH_EXE" -o StrictHostKeyChecking=no -i "$sshKeyPath" ec2-user@$AWS_IP "cat > $REMOTE_DIR/.env"
 
-Write-Host "`n[4/4] Restarting the Docker container..." -ForegroundColor Cyan
-& "$SSH_EXE" -o StrictHostKeyChecking=no -i "$sshKeyPath" ec2-user@$AWS_IP "sudo docker stop news-server news-live ; sudo docker rm news-server news-live ; cd $REMOTE_DIR && sudo docker build -t news-backend . && sudo docker run -d -p 8000:8000 --name news-server news-backend"
+Write-Host "`n[4/4] Force-rebuilding and Restarting Server..." -ForegroundColor Cyan
+& "$SSH_EXE" -o StrictHostKeyChecking=no -i "$sshKeyPath" ec2-user@$AWS_IP "cd $REMOTE_DIR && sudo docker stop news-server ; sudo docker rm news-server ; sudo docker build --no-cache -t news-backend . && sudo docker run -d -p 8000:8000 --name news-server --env-file .env news-backend"
 
 Write-Host "`n==========================================" -ForegroundColor Green
 Write-Host "✅ AWS SERVER UPDATED SUCCESSFULLY!" -ForegroundColor Green
