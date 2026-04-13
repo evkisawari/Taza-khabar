@@ -36,7 +36,8 @@ async def background_sync():
             await sync_all_news()
         except Exception as e:
             logging.error(f"Background sync error: {e}")
-        await asyncio.sleep(300)
+        # Wait 1 hour (3600 seconds) between syncs to conserve Groq AI tokens
+        await asyncio.sleep(3600)
 
 @app.get("/api/status")
 async def get_status():

@@ -25,21 +25,22 @@ logger = logging.getLogger("sync")
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
-import time
+from groq import AsyncGroq
+import asyncio
 
 # =============================================================
 # GROQ AI SUMMARIZER (with auto-retry on rate limit)
 # =============================================================
-def _call_groq(prompt: str, max_tokens: int = 150) -> str:
+async def _call_groq(prompt: str, max_tokens: int = 150) -> str:
     """Make a Groq API call with up to 3 retries on rate limit (429)."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         logger.error("❌ GROQ_API_KEY not found in environment!")
         return ""
-    client = Groq(api_key=api_key)
+    client = AsyncGroq(api_key=api_key)
     for attempt in range(3):
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
                 temperature=0.3,
@@ -53,9 +54,9 @@ def _call_groq(prompt: str, max_tokens: int = 150) -> str:
                 import re as _re
                 wait_match = _re.search(r'try again in (\d+)m(\d+(\.\d+)?)?s', err)
                 wait_sec = int(wait_match.group(1)) * 60 + 10 if wait_match else 65
-                wait_sec = min(wait_sec, 120)  # Cap at 2 minutes
+                wait_sec = min(wait_sec, 60)  # Cap at 1 minute so we don't hold up indefinitely
                 logger.warning(f"⏳ Rate limit hit. Waiting {wait_sec}s before retry {attempt+1}/3...")
-                time.sleep(wait_sec)
+                await asyncio.sleep(wait_sec)
             else:
                 logger.error(f"❌ Groq API error: {err}")
                 return ""
@@ -63,7 +64,7 @@ def _call_groq(prompt: str, max_tokens: int = 150) -> str:
     return ""
 
 
-def groq_summarize(text: str, language: str = "english") -> str:
+async def groq_summarize(text: str, language: str = "english") -> str:
     """Use Groq to write a professional 60-word news summary. Never stores raw text."""
     if not text or len(text.strip()) < 150:
         return ""
@@ -83,16 +84,17 @@ Strict rules:
 Article:
 {text[:1200]}"""
 
-    summary = _call_groq(prompt, max_tokens=150)
+    summary = await _call_groq(prompt, max_tokens=150)
     if not summary:
         return ""
     # Strip any leaked prefix
+    import re
     summary = re.sub(r'^(Sure|Here is|Summary|सारांश|यहाँ)[^।.]*[।:.]?\s*', '', summary, flags=re.IGNORECASE).strip()
     logger.info(f"✅ Groq summary ({len(summary)} chars): {summary[:60]}...")
     return summary
 
 
-def groq_make_title(text: str, language: str = "english") -> str:
+async def groq_make_title(text: str, language: str = "english") -> str:
     """Use Groq to write a clean, punchy news headline (max 12 words)."""
     if not text or len(text.strip()) < 100:
         return ""
@@ -102,7 +104,7 @@ Max 12 words. Output ONLY the headline. No quotes, no punctuation at end.
 
 Article:
 {text[:600]}"""
-    return _call_groq(prompt, max_tokens=50)
+    return await _call_groq(prompt, max_tokens=50)
 
 
 # =============================================================
@@ -252,10 +254,10 @@ async def ingest_source(source: dict):
                     continue
 
                 # --- STEP 2: Generate AI title + AI summary from Groq ---
-                ai_title = groq_make_title(content_for_ai, language=lang_param)
+                ai_title = await groq_make_title(content_for_ai, language=lang_param)
                 final_title = ai_title if ai_title and len(ai_title) > 5 else title
 
-                summary = groq_summarize(content_for_ai, language=lang_param)
+                summary = await groq_summarize(content_for_ai, language=lang_param)
 
                 # Skip article entirely if Groq couldn't summarize — no raw text stored ever
                 if not summary or len(summary) < 30:
