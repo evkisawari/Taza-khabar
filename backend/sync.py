@@ -21,7 +21,8 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    # Using 'gemini-1.5-flash' which is the most stable identifier
+    model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     model = None
 
@@ -223,13 +224,26 @@ except:
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
 def scrape_with_trafilatura(url):
-    """Sync wrapper for trafilatura"""
+    """Sync wrapper for trafilatura with a robust User-Agent to avoid 403s"""
     try:
+        # We manually fetch with a human-like UA because trafilatura's default is often blocked
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Referer": "https://www.google.com/"
+        }
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=15.0) as client:
+            response = client.get(url)
+            if response.status_code == 200:
+                return trafilatura.extract(response.text, include_comments=False)
+        
+        # Fallback if manual fetch fails
         downloaded = trafilatura.fetch_url(url)
         if downloaded:
             return trafilatura.extract(downloaded)
         return None
-    except:
+    except Exception as e:
+        logger.error(f"Scraping failed for {url}: {e}")
         return None
 
 async def fetch_article_body(url):
