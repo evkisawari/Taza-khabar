@@ -42,8 +42,8 @@ def call_gemini(prompt):
         # This prevents the '404 Model Not Found' error permanently
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # Priority mapping (1.5 Flash is now Top Stable Priority)
-        priority = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.0-pro', 'gemini-2.0-flash']
+        # Priority mapping (Updated for next-gen models, jumping straight to 3.1 and 2.5)
+        priority = ['gemini-3.1-pro', 'gemini-3', 'gemini-2.5-flash', 'gemini-2.0-flash']
         
         selected = None
         for p in priority:
@@ -59,7 +59,7 @@ def call_gemini(prompt):
                         continue
             if selected: break
             
-        target_model = selected if selected else (available[0] if available else 'models/gemini-1.5-flash')
+        target_model = selected if selected else (available[0] if available else 'models/gemini-2.5-flash')
 
         logger.info(f"🔍 Discovered model: {target_model}")
         
