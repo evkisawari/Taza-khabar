@@ -53,13 +53,13 @@ Rules:
 - Max 75 words
 
 Article:
-{text[:3000]}"""
+{text[:800]}"""
 
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
             temperature=0.3,
-            max_tokens=200,
+            max_tokens=150,
         )
         summary = response.choices[0].message.content.strip()
         # Remove any leaked prefix phrases
@@ -74,6 +74,15 @@ Article:
 # =============================================================
 # CONTENT CLEANER
 # =============================================================
+# Language names that appear in Google News language-picker blocks
+_LANG_LIST_WORDS = {'नेपाली','मराठी','हिन्दी','हिंदी','असमीया','বাংলা','ਪੰਜਾਬੀ','ગુજરાતી','ଓଡ଼ିଆ','தமிழ்','తెలుగు','ಕನ್ನಡ','മലയാളം','සිංහල','Melayu','Slovenčina','Kiswahili'}
+
+def is_language_list(text: str) -> bool:
+    """Returns True if the text is a Google News language-picker menu, not real news."""
+    words = set(re.split(r'[\s\-–\n]+', text))
+    matches = words & _LANG_LIST_WORDS
+    return len(matches) >= 3  # If 3+ language names found, it's junk
+
 def clean_text(raw: str, language: str = "en") -> str:
     """Remove HTML tags, metadata, and language-list junk from RSS content."""
     if not raw:
@@ -83,12 +92,8 @@ def clean_text(raw: str, language: str = "en") -> str:
     text = html_parser.unescape(text)
     text = re.sub(r'\s+', ' ', text).strip()
 
-    # Kill Google News language-picker blocks (the big list of languages)
-    # These contain "gujarati - marathi - hindi..." type text
-    text = re.sub(r'([\w\u0900-\u097F]+\s*[-–]\s*){5,}[\w\u0900-\u097F]+', '', text)
-    # Kill the English variant: "EnglishUnited States - Deutsch - ..."
+    # Kill the English Google News language footer
     text = re.sub(r'English\s*United\s*States.*', '', text, flags=re.IGNORECASE | re.DOTALL)
-    # Kill Kiswahili footer
     text = re.sub(r'Kiswahili.*', '', text, flags=re.IGNORECASE | re.DOTALL)
 
     # Hindi-specific: Remove everything before the first Devanagari character
@@ -202,6 +207,11 @@ async def ingest_source(source: dict):
                 # Use full article body if available, otherwise fall back to RSS summary
                 content_for_ai = clean_text(body, language=lang_code) if body else rss_text
 
+                # CRITICAL: Skip if it's a Google News language-picker list (not real news)
+                if is_language_list(content_for_ai):
+                    logger.info(f"Skipping (language list junk): {title[:50]}")
+                    continue
+
                 # Skip if content is too short to be real news
                 if len(content_for_ai) < 150:
                     logger.info(f"Skipping (too short): {title[:50]}")
@@ -254,17 +264,31 @@ async def sync_all_news():
     logger.info("🚀 Starting news sync...")
 
     sources = [
-        # --- ENGLISH ---
-        {'name': 'The Hindu', 'url': 'https://www.thehindu.com/news/national/feeder/default.rss', 'category': 'National', 'language': 'en'},
-        {'name': 'BBC World', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
-        {'name': 'Al Jazeera', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
-        {'name': 'Reuters Politics', 'url': 'https://feeds.reuters.com/reuters/politicsNews', 'category': 'Politics', 'language': 'en'},
+        # --- ENGLISH (National) ---
+        {'name': 'BBC India', 'url': 'http://feeds.bbci.co.uk/news/world/asia/india/rss.xml', 'category': 'National', 'language': 'en'},
+        {'name': 'The Hindu', 'url': 'https://www.thehindu.com/feeder/default.rss', 'category': 'National', 'language': 'en'},
+        {'name': 'India Today', 'url': 'https://www.indiatoday.in/rss/home', 'category': 'National', 'language': 'en'},
+        {'name': 'Moneycontrol', 'url': 'http://www.moneycontrol.com/rss/latestnews.xml', 'category': 'National', 'language': 'en'},
+        
+        # --- ENGLISH (International) ---
+        {'name': 'Guardian India', 'url': 'https://www.theguardian.com/world/india/rss', 'category': 'International', 'language': 'en'},
+        {'name': 'News18 World', 'url': 'https://www.news18.com/rss/world.xml', 'category': 'International', 'language': 'en'},
+        {'name': 'Reuters World', 'url': 'https://www.reutersagency.com/feed/?best-topics=world-news&post_type=best', 'category': 'International', 'language': 'en'},
 
-        # --- HINDI (Aaj Tak - reliable Devanagari content) ---
-        {'name': 'Aaj Tak', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
-        {'name': 'Aaj Tak World', 'url': 'https://www.aajtak.in/rssfeeds/?id=world', 'category': 'International', 'language': 'hi'},
-        {'name': 'NDTV Hindi', 'url': 'https://feeds.feedburner.com/ndtvkhabar-hindi', 'category': 'National', 'language': 'hi'},
-        {'name': 'NDTV Hindi Politics', 'url': 'https://feeds.feedburner.com/ndtvkhabar-politics-hindi', 'category': 'Politics', 'language': 'hi'},
+        # --- ENGLISH (Politics & War) ---
+        {'name': 'The Print Politics', 'url': 'https://theprint.in/category/politics/feed/', 'category': 'Politics', 'language': 'en'},
+        {'name': 'Al Jazeera War', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
+
+        # --- HINDI (National) ---
+        {'name': 'Amar Ujala', 'url': 'https://www.amarujala.com/rss/breaking-news.xml', 'category': 'National', 'language': 'hi'},
+        {'name': 'Live Hindustan', 'url': 'https://feed.livehindustan.com/rss/3127', 'category': 'National', 'language': 'hi'},
+        {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-feed/1061/', 'category': 'National', 'language': 'hi'},
+        {'name': 'India TV Hindi', 'url': 'https://www.indiatv.in/cms/rssfeed', 'category': 'National', 'language': 'hi'},
+
+        # --- HINDI (International & Politics) ---
+        {'name': 'News18 Hindi World', 'url': 'https://hindi.news18.com/khabar-rss/', 'category': 'International', 'language': 'hi'},
+        {'name': 'Jansatta Politics', 'url': 'https://www.jansatta.com/feed/', 'category': 'Politics', 'language': 'hi'},
+        {'name': 'Bhaskar Politics', 'url': 'https://www.bhaskar.com/rss-v1--category-1065.xml', 'category': 'Politics', 'language': 'hi'},
     ]
 
     # Process in small batches to avoid overloading
