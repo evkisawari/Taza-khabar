@@ -21,8 +21,8 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Using 'gemini-1.5-flash' which is the most stable identifier
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Using Gemini 2.0 Flash for superior performance and better quota handling
+    model = genai.GenerativeModel('gemini-2.0-flash')
 else:
     model = None
 
@@ -247,18 +247,32 @@ def scrape_with_trafilatura(url):
         return None
 
 async def fetch_article_body(url):
-    """Offloads the heavy scraping to a thread pool for maximum speed."""
-    loop = asyncio.get_event_loop()
+    """Offloads the heavy scraping and handles 403/Forbidden bypass."""
+    # ADVANCED STEALTH HEADERS
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
+        "Referer": "https://www.google.com/",
+        "DNT": "1",
+        "Connection": "keep-alive"
+    }
+    
     try:
+        # 1. Try fetching with httpx first to bypass bot detection
+        async with httpx.AsyncClient(headers=headers, timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                body = trafilatura.extract(resp.text)
+                if body and len(body) > 100:
+                    return body.strip()
+
+        # 2. Fallback to trafilatura's internal download if httpx fails
+        loop = asyncio.get_event_loop()
         body = await loop.run_in_executor(executor, scrape_with_trafilatura, url)
-        if body and len(body.strip()) > 100:
-            # Check for junk keywords
-            junk = ["cookie", "consent", "accept all", "reject all", "privacy policy", "more options", "g.co/", "privacytools"]
-            if any(j in body.lower()[:300] for j in junk):
-                return None
-            return body.strip()
-        return None
-    except:
+        return body.strip() if body else None
+    except Exception as e:
+        logger.error(f"❌ Scraping error for {url}: {e}")
         return None
 
 async def fetch_direct_rss(source):
