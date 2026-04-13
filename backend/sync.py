@@ -87,8 +87,9 @@ def clean_html(raw_html, language='en'):
         if devanagari_search:
             text = text[devanagari_search.start():]
             
-    # Remove common junk phrases anywhere
+    # Remove common    # --- GLOBAL JUNK DELETE ---
     junk = [
+        r'English\s*United\s*States.*?Kiswahili', # Kills the Google News language picker block
         r'कॉपी लिंक', r'copy link', r'Advertisement', 
         r'Follow us on.*$', r'Subscribe to.*$',
         r'^.*?\s*[\-\|]\s*.*? न्यूज़\s*:', # "City - Title News:"
