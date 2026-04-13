@@ -56,16 +56,31 @@ def local_smart_summarize(text, language="english", sentences_count=3):
 
 def clean_html(raw_html):
     if not raw_html: return ""
-    # Remove HTML tags and common entities
+    # Remove HTML tags
     cleanr = re.compile('<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});')
     cleantext = re.sub(cleanr, ' ', raw_html)
-    return html_parser.unescape(cleantext).strip()
+    text = html_parser.unescape(cleantext).strip()
+    
+    # --- Deep Junk Filter ---
+    junk_patterns = [
+        r'- Hindi News - .*? -', # Removes category headers
+        r'कॉपी लिंक',            # Removes "Copy Link"
+        r'Advertisement',
+        r'Subscribe to .*?',
+        r'Follow us on .*?',
+        r'^.*?\s*[\-\|]\s*.*?:', # Removes "Location - Title:"
+    ]
+    for pattern in junk_patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+    return text.strip()
 
 def clean_title(title):
     if not title: return ""
     title = html_parser.unescape(title)
-    # Remove source names from titles (e.g., "Title - BBC News")
+    # Remove source names and category markers
     title = re.sub(r'\s*[\-\|]\s*.*$', '', title)
+    title = re.sub(r'Hindi News.*?:', '', title, flags=re.IGNORECASE)
     return title.strip()
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
@@ -169,19 +184,12 @@ async def sync_all_news():
         {'name': 'The Hindu National', 'url': 'https://www.thehindu.com/news/national/feeder/default.rss', 'category': 'National', 'language': 'en'},
         {'name': 'TOI News', 'url': 'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms', 'category': 'National', 'language': 'en'},
         {'name': 'BBC World News', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
-        {'name': 'Al Jazeera', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'International', 'language': 'en'},
-        {'name': 'TechCrunch', 'url': 'https://techcrunch.com/feed/', 'category': 'Technology', 'language': 'en'},
-        {'name': 'The Verge', 'url': 'https://www.theverge.com/rss/index.xml', 'category': 'Technology', 'language': 'en'},
-        {'name': 'Business Today', 'url': 'https://www.businesstoday.in/rss/home', 'category': 'Business', 'language': 'en'},
-        {'name': 'Hollywood Reporter', 'url': 'https://www.hollywoodreporter.com/feed/', 'category': 'Entertainment', 'language': 'en'},
-        {'name': 'ESPN Cricket', 'url': 'https://www.espncricinfo.com/rss/content/story/feeds/0.xml', 'category': 'Sports', 'language': 'en'},
+        {'name': 'Al Jazeera Conflicts', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
         {'name': 'Reuters Politics', 'url': 'https://www.reutersagency.com/feed/?best-topics=political-news&post_type=best', 'category': 'Politics', 'language': 'en'},
-        {'name': 'Vogue Lifestyle', 'url': 'https://www.vogue.com/feed/lifestyle/rss', 'category': 'Lifestyle', 'language': 'en'},
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-v1--category-1061.xml', 'category': 'National', 'language': 'hi'},
         {'name': 'Aaj Tak Home', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
-        {'name': 'Navbharat Times', 'url': 'https://navbharattimes.indiatimes.com/rssfeeds/2276856.cms', 'category': 'National', 'language': 'hi'},
-        {'name': 'Bhaskar Business', 'url': 'https://www.bhaskar.com/rss-v1--category-1064.xml', 'category': 'Business', 'language': 'hi'},
-        {'name': 'Aaj Tak Sports', 'url': 'https://www.aajtak.in/rssfeeds/?id=sports', 'category': 'Sports', 'language': 'hi'}
+        {'name': 'Aaj Tak World', 'url': 'https://www.aajtak.in/rssfeeds/?id=world', 'category': 'International', 'language': 'hi'},
+        {'name': 'Navbharat Times Politics', 'url': 'https://navbharattimes.indiatimes.com/rssfeeds/2276856.cms', 'category': 'Politics', 'language': 'hi'}
     ]
     
     import random
