@@ -86,6 +86,7 @@ def clean_html(raw_html):
 
 def clean_title(title):
     if not title: return ""
+    title = html_parser.unescape(title)
     title = re.sub(r'\s*\|\s*.*$', '', title)
     title = re.sub(r'\s*-\s*.*$', '', title)
     return title.strip()
@@ -133,13 +134,14 @@ async def fetch_direct_rss(source):
                 
                 if len(clean_content) < 200: continue
 
+                lang_name = 'Hindi' if source.get('language') == 'hi' else 'English'
                 # PRO MAX CONSOLIDATED PROMPT
                 prompt = f"""
-                You are a Chief News Editor. 
-                1. QUALITY: If content is JSON junk or broken, reply 'REJECT'.
-                2. NEWS SUMMARY: Summarize the article in 60-70 words.
-                3. NO BRANDS: Do not mention AajTak, BBC, etc.
-                4. NO META: Do not mention authors or read time.
+                You are a Chief News Editor writing for a premium news app.
+                1. QUALITY: If content is JSON junk, broken, or not news, reply ONLY 'REJECT'.
+                2. LANGUAGE AND TONE: Write a HIGH-QUALITY, engaging, and professional 60-70 word summary strictly in {lang_name}. Do NOT mix languages.
+                3. NO BRANDS: Do NOT mention any news organizations (AajTak, BBC, Reuters, News18, NDTV, Bhaskar, etc.).
+                4. NO META: Do not mention reporters, authors, or reading time.
                 
                 Content: {clean_content[:2000]}
                 """
