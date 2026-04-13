@@ -46,8 +46,11 @@ async def get_status():
         count_result = await db.execute(select(func.count(Article.id)))
         total_count = count_result.scalar()
         return {
-            "last_sync": latest.created_at.isoformat() if latest else None,
-            "total_articles": total_count
+            "success": True,
+            "data": {
+                "last_sync": latest.created_at.isoformat() if latest else None,
+                "total_articles": total_count
+            }
         }
 
 @app.get("/api/categories")
@@ -66,11 +69,16 @@ async def trigger_sync():
 async def get_news(category: str = "all", language: str = "en", limit: int = 10, offset: int = 0):
     async with AsyncSessionLocal() as db:
         query = select(Article)
-        # CASE INSENSITIVE CATEGORY FILTER
+        
+        # STRICT LANGUAGE FILTER
+        lang_filter = language.lower()
+        if lang_filter != "all":
+            query = query.filter(Article.language == lang_filter)
+            
+        # CATEGORY FILTER
         if category.lower() != "all":
             query = query.filter(func.lower(Article.category) == category.lower())
-        
-        query = query.filter(Article.language == language)
+            
         query = query.order_by(desc(Article.created_at)).offset(offset).limit(limit)
         
         result = await db.execute(query)

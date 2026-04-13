@@ -87,16 +87,16 @@ def clean_html(raw_html, language='en'):
         if devanagari_search:
             text = text[devanagari_search.start():]
             
-    # Remove common    # --- GLOBAL JUNK DELETE ---
+    # --- GLOBAL JUNK DELETE ---
     junk = [
-        r'English\s*United\s*States.*?Kiswahili', # Kills the Google News language picker block
+        r'[\-\s]*English\s*United\s*States.*?la\.\.\.', # Kills the long Google News footer
+        r'English\s*United\s*States.*?Kiswahili',     # Kills variant footer
         r'कॉपी लिंक', r'copy link', r'Advertisement', 
         r'Follow us on.*$', r'Subscribe to.*$',
-        r'^.*?\s*[\-\|]\s*.*? न्यूज़\s*:', # "City - Title News:"
         r'[\-\|]\s*Hindi News.*$',
     ]
     for pattern in junk:
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
         
     return text.strip()
 
@@ -172,14 +172,16 @@ async def fetch_direct_rss(source):
                     
                     lang_code = source.get('language', 'en')
                     full_body = await fetch_article_body(article_url)
-                    rss_summary = clean_html(entry.get('summary', ''), language=lang_code)
-                    clean_content = full_body if full_body else rss_summary
+                    
+                    # CLEAN EVERYTHING (Both RSS and Full Body)
+                    clean_content = full_body if full_body else entry.get('summary', '')
+                    clean_content = clean_html(clean_content, language=lang_code)
                     
                     if len(clean_content) < 150: continue
                 
-                    # Use Local Smart Summarizer instead of Gemini
+                    # Use AI Summarizer
                     lang_param = 'hindi' if lang_code == 'hi' else 'english'
-                    summary = local_smart_summarize(clean_content, language=lang_param)
+                    summary = groq_summarize(clean_content, language=lang_param)
                     
                     # If local sum fails to produce good text, fallback to clean rss summary
                     if len(summary) < 50:
