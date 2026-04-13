@@ -4,248 +4,277 @@ import httpx
 import asyncio
 import re
 import html as html_parser
-from datetime import datetime, timedelta
+import os
+import threading
+import concurrent.futures
+from datetime import datetime
 from bs4 import BeautifulSoup
 from database import AsyncSessionLocal
 from models import Article
 from sqlalchemy.future import select
-from sqlalchemy import or_, func, desc
-import os
-# import google.generativeai as genai
+from sqlalchemy import func, desc
 import trafilatura
 from dotenv import load_dotenv
-import threading
-import concurrent.futures
+from groq import Groq
 
-# Load environment variables
+# --- Load environment FIRST, before anything else ---
 load_dotenv()
 
-# Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sync")
 
-# --- PRO MAX AI ENGINE ---
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.lsa import LsaSummarizer
-
-from groq import Groq
-
-def get_groq_client():
-    key = os.getenv("GROQ_API_KEY")
-    if not key:
-        logger.error("❌ CRITICAL: GROQ_API_KEY is missing from .env!")
-        return None
-    return Groq(api_key=key)
-
-def groq_summarize(text, language="english"):
-    """High-speed AI Summarization using Groq"""
-    if not text or len(text) < 100: return text
-    
-    client = get_groq_client()
-    if not client: return text[:400] + "..."
-    
-    try:
-        prompt = f"""
-        Summarize this news article in about 60 words.
-        Target Language: {language}
-        
-        Strict Rules:
-        1. Output ONLY the summary text. No 'Here is a summary' or 'Sure'.
-        2. Remove all metadata, source names, 'Copy Link', or junk text.
-        3. Professional, engaging, and factual news tone.
-        4. Max 75 words.
-        
-        ARTICLE:
-        {text[:4000]}
-        """
-        
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama3-70b-8192",
-            temperature=0.5,
-        )
-        summary = chat_completion.choices[0].message.content.strip()
-        # Basic character cleaning if common prefixes leak
-        summary = re.sub(r'^(Summary|यहाँ सारांश है|सारांश):', '', summary, flags=re.IGNORECASE).strip()
-        return summary
-    except Exception as e:
-        logger.info(f"Groq API Error: {e}. Falling back to clean text...")
-        return text[:400] + "..."
-
-def local_smart_summarize(text, language="english", sentences_count=3):
-    # This is now a simple wrapper for Groq
-    return groq_summarize(text, language)
-
-def clean_html(raw_html, language='en'):
-    if not raw_html: return ""
-    cleanr = re.compile('<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});')
-    cleantext = re.sub(cleanr, ' ', raw_html)
-    text = html_parser.unescape(cleantext).strip()
-    
-    # --- BHASKAR SPECIAL SCRUBBER ---
-    if "Dainik Bhaskar" in text or "Hindi News" in text:
-        # Throw away leading metadata
-        text = re.sub(r'^.*?Dainik Bhaskar', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'^.*?News Headlines Today.*?\-\s*', '', text, flags=re.IGNORECASE)
-
-    # --- DEVANAGARI LOCK ---
-    if language == 'hi':
-        # Remove everything until the first Hindi character (Devanagari)
-        devanagari_search = re.search(r'[\u0900-\u097F]', text)
-        if devanagari_search:
-            text = text[devanagari_search.start():]
-            
-    # --- GLOBAL JUNK DELETE ---
-    junk = [
-        r'[\-\s]*English\s*United\s*States.*?la\.\.\.', # Kills the long Google News footer
-        r'English\s*United\s*States.*?Kiswahili',     # Kills variant footer
-        r'कॉपी लिंक', r'copy link', r'Advertisement', 
-        r'Follow us on.*$', r'Subscribe to.*$',
-        r'[\-\|]\s*Hindi News.*$',
-    ]
-    for pattern in junk:
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
-        
-    return text.strip()
-
-def clean_title(title):
-    if not title: return ""
-    title = html_parser.unescape(title)
-    # Remove source names and metadata headers
-    title = re.sub(r'^.*?[\-\|]\s*', '', title)
-    title = re.sub(r'\s*[\-\|]\s*.*$', '', title)
-    title = re.sub(r'Hindi News.*?:', '', title, flags=re.IGNORECASE)
-    # Ensure no English junk prefixes in Hindi titles
-    if re.search(r'[\u0900-\u097F]', title):
-        dev = re.search(r'[\u0900-\u097F]', title)
-        if dev: title = title[dev.start():]
-    return title.strip()
-
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
-def scrape_with_trafilatura(url):
-    """Deep Scraping with Browser Headers"""
+# =============================================================
+# GROQ AI SUMMARIZER
+# =============================================================
+def groq_summarize(text: str, language: str = "english") -> str:
+    """Use Groq Llama3 to write a clean 60-word professional news summary."""
+    if not text or len(text.strip()) < 150:
+        logger.warning("Text too short for summarization, skipping.")
+        return ""
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        logger.error("❌ GROQ_API_KEY not found in environment!")
+        return ""
+
+    try:
+        client = Groq(api_key=api_key)
+        lang_instruction = "Hindi (Devanagari script only)" if language == "hindi" else "English"
+        
+        prompt = f"""You are a professional news editor. Write a clean, factual 60-word summary of the article below.
+
+Rules:
+- Language: {lang_instruction}
+- Output ONLY the summary. No intro phrases like "Here is..." or "Sure..."
+- Do NOT mention the source website name
+- Do NOT include any metadata, links, or UI elements
+- Max 75 words
+
+Article:
+{text[:3000]}"""
+
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=200,
+        )
+        summary = response.choices[0].message.content.strip()
+        # Remove any leaked prefix phrases
+        summary = re.sub(r'^(Sure|Here is|Summary|सारांश|यहाँ)[^।.]*[।:.]?\s*', '', summary, flags=re.IGNORECASE).strip()
+        logger.info(f"✅ Groq summary generated ({len(summary)} chars)")
+        return summary
+    except Exception as e:
+        logger.error(f"❌ Groq API failed: {e}")
+        return ""
+
+
+# =============================================================
+# CONTENT CLEANER
+# =============================================================
+def clean_text(raw: str, language: str = "en") -> str:
+    """Remove HTML tags, metadata, and language-list junk from RSS content."""
+    if not raw:
+        return ""
+    # Strip HTML tags
+    text = re.sub(r'<[^>]+>', ' ', raw)
+    text = html_parser.unescape(text)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Kill Google News language-picker blocks (the big list of languages)
+    # These contain "gujarati - marathi - hindi..." type text
+    text = re.sub(r'([\w\u0900-\u097F]+\s*[-–]\s*){5,}[\w\u0900-\u097F]+', '', text)
+    # Kill the English variant: "EnglishUnited States - Deutsch - ..."
+    text = re.sub(r'English\s*United\s*States.*', '', text, flags=re.IGNORECASE | re.DOTALL)
+    # Kill Kiswahili footer
+    text = re.sub(r'Kiswahili.*', '', text, flags=re.IGNORECASE | re.DOTALL)
+
+    # Hindi-specific: Remove everything before the first Devanagari character
+    if language == 'hi':
+        match = re.search(r'[\u0900-\u097F]', text)
+        if match:
+            text = text[match.start():]
+
+    # Common junk phrases
+    junk_patterns = [
+        r'कॉपी लिंक', r'copy link', r'advertisement',
+        r'follow us on.*', r'subscribe to.*',
+        r'read more.*', r'also read.*',
+        r'[-|]\s*hindi news.*',
+    ]
+    for p in junk_patterns:
+        text = re.sub(p, '', text, flags=re.IGNORECASE)
+
+    return text.strip()
+
+
+def clean_title(title: str) -> str:
+    if not title:
+        return ""
+    title = html_parser.unescape(title)
+    # Remove "Source - " prefix patterns
+    title = re.sub(r'^[^|–-]*[-–|]\s*', '', title)
+    # Remove trailing " - Source" suffix
+    title = re.sub(r'\s*[-–|][^|–-]*$', '', title)
+    # For Hindi titles: strip any leading Latin characters
+    if re.search(r'[\u0900-\u097F]', title):
+        m = re.search(r'[\u0900-\u097F]', title)
+        if m:
+            title = title[m.start():]
+    return title.strip()
+
+
+# =============================================================
+# ARTICLE BODY FETCHER (Deep Scraper)
+# =============================================================
+def scrape_article(url: str) -> str | None:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer": "https://www.google.com/"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://www.google.com/",
     }
     try:
         with httpx.Client(headers=headers, follow_redirects=True, timeout=15.0) as client:
             resp = client.get(url)
-            if resp.status_code == 200:
-                # Try Trafilatura first
-                content = trafilatura.extract(resp.text, include_comments=False)
-                if content and len(content) > 300:
-                    return content
-                
-                # BS4 Fallback (More aggressive for stubborn sites)
-                soup = BeautifulSoup(resp.text, 'lxml')
-                for s in soup(["script", "style", "nav", "footer", "header", "aside"]):
-                    s.decompose()
-                paragraphs = soup.find_all('p')
-                text = " ".join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 50])
-                return text if len(text) > 300 else None
+            if resp.status_code != 200:
+                return None
+            # Try trafilatura (best quality)
+            content = trafilatura.extract(resp.text, include_comments=False, include_tables=False)
+            if content and len(content) > 200:
+                return content
+            # Fallback: extract <p> tags
+            soup = BeautifulSoup(resp.text, 'lxml')
+            for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                tag.decompose()
+            paragraphs = [p.get_text(" ").strip() for p in soup.find_all('p') if len(p.get_text().strip()) > 40]
+            body = " ".join(paragraphs)
+            return body if len(body) > 200 else None
     except Exception as e:
         logger.warning(f"Scrape failed for {url}: {e}")
         return None
-    return None
 
-async def fetch_article_body(url):
+
+async def fetch_body(url: str) -> str | None:
     loop = asyncio.get_event_loop()
     try:
-        return await loop.run_in_executor(executor, scrape_with_trafilatura, url)
-    except:
+        return await loop.run_in_executor(executor, scrape_article, url)
+    except Exception:
         return None
 
-async def fetch_direct_rss(source):
-    articles_found = 0
+
+# =============================================================
+# PER-SOURCE INGESTION
+# =============================================================
+async def ingest_source(source: dict):
+    articles_saved = 0
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20.0) as client:
-            response = await client.get(source['url'])
-            feed = feedparser.parse(response.text)
-            
-            async with AsyncSessionLocal() as db:
-                for entry in feed.entries[:25]: 
-                    article_url = entry.get('link')
-                    if not article_url: continue
-                    
-                    title = clean_title(entry.get('title', ''))
-                    art_id = f"{article_url}_{title}"
-                    
-                    exists = await db.execute(select(Article).where(Article.id == art_id))
-                    if exists.scalars().first():
-                        continue 
-                    
-                    lang_code = source.get('language', 'en')
-                    full_body = await fetch_article_body(article_url)
-                    
-                    # CLEAN EVERYTHING (Both RSS and Full Body)
-                    clean_content = full_body if full_body else entry.get('summary', '')
-                    clean_content = clean_html(clean_content, language=lang_code)
-                    
-                    if len(clean_content) < 150: continue
-                
-                    # Use AI Summarizer
-                    lang_param = 'hindi' if lang_code == 'hi' else 'english'
-                    summary = groq_summarize(clean_content, language=lang_param)
-                    
-                    # If local sum fails to produce good text, fallback to clean rss summary
-                    if len(summary) < 50:
-                        summary = rss_summary[:400] + "..."
-                        
-                    image_url = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c'
-                    if 'media_content' in entry and entry['media_content']:
-                        image_url = entry['media_content'][0]['url']
-                    elif 'media_thumbnail' in entry and entry['media_thumbnail']:
-                        image_url = entry['media_thumbnail'][0]['url']
-                    elif 'enclosure' in entry:
-                        image_url = entry['enclosure'].get('url', image_url)
+            resp = await client.get(source['url'])
+            feed = feedparser.parse(resp.text)
 
-                    new_art = Article(
-                        id=art_id, title=title, content=summary,
-                        image_url=image_url, source_name=source['name'],
-                        source_url=article_url, category=source['category'],
-                        language=source.get('language', 'en'), created_at=datetime.utcnow()
-                    )
-                    db.add(new_art)
-                    articles_found += 1
-                    await db.commit()
-                    await asyncio.sleep(4)
-                    
-        logger.info(f"✅ {source['name']}: Added {articles_found} articles.")
+        lang_code = source.get('language', 'en')
+        lang_param = 'hindi' if lang_code == 'hi' else 'english'
+
+        async with AsyncSessionLocal() as db:
+            for entry in feed.entries[:20]:
+                link = entry.get('link')
+                if not link:
+                    continue
+
+                title = clean_title(entry.get('title', ''))
+                if not title:
+                    continue
+
+                art_id = f"{link}_{title[:50]}"
+
+                # Skip duplicates
+                exists = await db.execute(select(Article).where(Article.id == art_id))
+                if exists.scalars().first():
+                    continue
+
+                # --- STEP 1: Get article body (prefer full scrape over RSS snippet) ---
+                body = await fetch_body(link)
+                rss_text = clean_text(entry.get('summary', ''), language=lang_code)
+
+                # Use full article body if available, otherwise fall back to RSS summary
+                content_for_ai = clean_text(body, language=lang_code) if body else rss_text
+
+                # Skip if content is too short to be real news
+                if len(content_for_ai) < 150:
+                    logger.info(f"Skipping (too short): {title[:50]}")
+                    continue
+
+                # --- STEP 2: Send to Groq for professional summary ---
+                summary = groq_summarize(content_for_ai, language=lang_param)
+
+                # If Groq fails, skip the article entirely (no junk fallback)
+                if not summary or len(summary) < 30:
+                    logger.warning(f"Groq returned empty summary, skipping: {title[:50]}")
+                    continue
+
+                # --- STEP 3: Get image ---
+                image_url = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800'
+                if entry.get('media_content'):
+                    image_url = entry['media_content'][0].get('url', image_url)
+                elif entry.get('media_thumbnail'):
+                    image_url = entry['media_thumbnail'][0].get('url', image_url)
+
+                # --- STEP 4: Save to DB ---
+                article = Article(
+                    id=art_id,
+                    title=title,
+                    content=summary,
+                    image_url=image_url,
+                    source_name=source['name'],
+                    source_url=link,
+                    category=source['category'],
+                    language=lang_code,
+                    created_at=datetime.utcnow(),
+                )
+                db.add(article)
+                await db.commit()
+                articles_saved += 1
+                logger.info(f"✅ Saved: [{lang_code}/{source['category']}] {title[:60]}")
+
+                # Small delay to avoid Groq rate limits
+                await asyncio.sleep(2)
+
+        logger.info(f"📰 {source['name']}: {articles_saved} new articles saved.")
     except Exception as e:
-        logger.error(f"Error fetching {source['name']}: {e}")
+        logger.error(f"❌ Error in source '{source['name']}': {e}")
 
+
+# =============================================================
+# MASTER SYNC ORCHESTRATOR
+# =============================================================
 async def sync_all_news():
-    logger.info("--- Starting Parallel Pro News Sync ---")
+    logger.info("🚀 Starting news sync...")
+
     sources = [
+        # --- ENGLISH ---
         {'name': 'The Hindu', 'url': 'https://www.thehindu.com/news/national/feeder/default.rss', 'category': 'National', 'language': 'en'},
         {'name': 'BBC World', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
-        {'name': 'Al Jazeera War', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
-        {'name': 'Reuters Politics', 'url': 'https://www.reutersagency.com/feed/?best-topics=political-news&post_type=best', 'category': 'Politics', 'language': 'en'},
-        
-        # --- GOOGLE NEWS HINDI (ULTRA CLEAN & ALWAYS FULL) ---
-        {'name': 'Google Hindi National', 'url': 'https://news.google.com/rss/headlines/section/topic/NATION?hl=hi&gl=IN&ceid=IN:hi', 'category': 'National', 'language': 'hi'},
-        {'name': 'Google Hindi World', 'url': 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=hi&gl=IN&ceid=IN:hi', 'category': 'International', 'language': 'hi'},
-        {'name': 'Google Hindi Politics', 'url': 'https://news.google.com/rss/search?q=politics&hl=hi&gl=IN&ceid=IN:hi', 'category': 'Politics', 'language': 'hi'},
-        {'name': 'Google Hindi War', 'url': 'https://news.google.com/rss/search?q=war+conflict&hl=hi&gl=IN&ceid=IN:hi', 'category': 'War', 'language': 'hi'},
-        {'name': 'Aaj Tak Home', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'}
+        {'name': 'Al Jazeera', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
+        {'name': 'Reuters Politics', 'url': 'https://feeds.reuters.com/reuters/politicsNews', 'category': 'Politics', 'language': 'en'},
+
+        # --- HINDI (Aaj Tak - reliable Devanagari content) ---
+        {'name': 'Aaj Tak', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'},
+        {'name': 'Aaj Tak World', 'url': 'https://www.aajtak.in/rssfeeds/?id=world', 'category': 'International', 'language': 'hi'},
+        {'name': 'NDTV Hindi', 'url': 'https://feeds.feedburner.com/ndtvkhabar-hindi', 'category': 'National', 'language': 'hi'},
+        {'name': 'NDTV Hindi Politics', 'url': 'https://feeds.feedburner.com/ndtvkhabar-politics-hindi', 'category': 'Politics', 'language': 'hi'},
     ]
-    
-    import random
-    random.shuffle(sources)
-    
-    # Run sources in Parallel batches
-    batch_size = 3
+
+    # Process in small batches to avoid overloading
+    batch_size = 2
     for i in range(0, len(sources), batch_size):
         batch = sources[i:i + batch_size]
-        logger.info(f"Processing Batch {i//batch_size + 1}...")
-        await asyncio.gather(*(fetch_direct_rss(source) for source in batch))
-            
-    logger.info("--- Parallel Sync Batch Complete ---")
+        await asyncio.gather(*(ingest_source(s) for s in batch))
+
+    logger.info("✅ Sync complete.")
+
 
 if __name__ == "__main__":
     asyncio.run(sync_all_news())
