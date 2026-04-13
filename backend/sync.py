@@ -24,87 +24,49 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sync")
 
-from groq import Groq
-
-# Initialize Groq
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-def ai_summarize_and_clean(text, language='english'):
-    """Generate professional, clean summary using Groq Llama-3"""
-    try:
-        lang_instruction = "Translate to and summarize in professional Hindi." if language == 'hindi' else "Summarize in professional English."
-        
-        prompt = f"""
-        TASK: Summarize this news article and clean all metadata junk.
-        RULES:
-        1. Result must be exactly 60-70 words.
-        2. {lang_instruction}
-        3. Remove ALL 'Copy Link', 'Hindi News', 'Location', 'Advertisement' and 'Trailing Metadata'.
-        4. Focus only on the core facts of the story.
-        5. Start directly with the story.
-        6. Provide the result in this format:
-           TITLE: [Professional Headline]
-           CONTENT: [70-word summary]
-
-        ARTICLE TEXT:
-        {text}
-        """
-
-        chat_completion = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-70b-versatile",
-            temperature=0.3,
-            max_tokens=500
-        )
-        
-        response = chat_completion.choices[0].message.content
-        
-        # Parse Title and Content
-        title_match = re.search(r'TITLE:\s*(.*)', response, re.IGNORECASE)
-        content_match = re.search(r'CONTENT:\s*(.*)', response, re.IGNORECASE | re.DOTALL)
-        
-        if title_match and content_match:
-            return title_match.group(1).strip(), content_match.group(1).strip()
-        
-        return None, response.replace("TITLE:", "").replace("CONTENT:", "").strip()
-
-    except Exception as e:
-        logger.error(f"Groq AI failed: {e}")
-        return None, None
-
 # --- PRO MAX AI ENGINE ---
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 
-def call_gemini(prompt):
-    """
-    DEPRECATED: Removed Gemini to eliminate 429 quota limits.
-    Now using local smart extraction.
-    """
-    pass
+from groq import Groq
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-def local_smart_summarize(text, sentences_count=2, language="english"):
-    """
-    DEPRECATED: Removed Gemini to eliminate 429 quota limits.
-    Now using local smart extraction.
-    """
+def groq_summarize(text, language="english"):
+    """High-speed AI Summarization using Groq"""
+    if not text or len(text) < 100: return text
+    
     try:
-        # Try requested language first
-        try:
-            parser = PlaintextParser.from_string(text, Tokenizer(language))
-        except:
-            # Fallback to English tokenizer if language (like hindi) is missing
-            parser = PlaintextParser.from_string(text, Tokenizer("english"))
-            
-        summarizer = LsaSummarizer()
-        summary = summarizer(parser.document, sentences_count)
-        result = " ".join([str(sentence) for sentence in summary])
-        # Ensure it fits within a nice 60-70 word equivalent
-        return result[:400] + "..." if len(result) > 400 else result
+        prompt = f"""
+        Summarize this news article in about 60 words.
+        Target Language: {language}
+        
+        Strict Rules:
+        1. Output ONLY the summary text. No 'Here is a summary' or 'Sure'.
+        2. Remove all metadata, source names, 'Copy Link', or junk text.
+        3. Professional, engaging, and factual news tone.
+        4. Max 75 words.
+        
+        ARTICLE:
+        {text[:4000]}
+        """
+        
+        chat_completion = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-70b-8192",
+            temperature=0.5,
+        )
+        summary = chat_completion.choices[0].message.content.strip()
+        # Basic character cleaning if common prefixes leak
+        summary = re.sub(r'^(Summary|यहाँ सारांश है|सारांश):', '', summary, flags=re.IGNORECASE).strip()
+        return summary
     except Exception as e:
-        logger.error(f"Local summary failed: {e}")
+        logger.info(f"Groq API Error: {e}. Falling back to clean text...")
         return text[:400] + "..."
+
+def local_smart_summarize(text, language="english", sentences_count=3):
+    # This is now a simple wrapper for Groq
+    return groq_summarize(text, language)
 
 def clean_html(raw_html, language='en'):
     if not raw_html: return ""
@@ -208,29 +170,19 @@ async def fetch_direct_rss(source):
                         continue 
                     
                     lang_code = source.get('language', 'en')
-                    lang_code = source.get('language', 'en')
                     full_body = await fetch_article_body(article_url)
-                    
-                    # Apply cleaning TO EVERYTHING (Full body or Summary)
-                    raw_text = full_body if full_body else entry.get('summary', '')
-                    clean_content = clean_html(raw_text, language=lang_code)
+                    rss_summary = clean_html(entry.get('summary', ''), language=lang_code)
+                    clean_content = full_body if full_body else rss_summary
                     
                     if len(clean_content) < 150: continue
                 
-                    # --- GROQ AI POWERED GENERATION ---
+                    # Use Local Smart Summarizer instead of Gemini
                     lang_param = 'hindi' if lang_code == 'hi' else 'english'
-                    ai_title, ai_summary = ai_summarize_and_clean(clean_content, language=lang_param)
+                    summary = local_smart_summarize(clean_content, language=lang_param)
                     
-                    if ai_summary:
-                        summary = ai_summary
-                        if ai_title: title = ai_title
-                    else:
-                        # Fallback to Local Smart Summarizer
-                        summary = local_smart_summarize(clean_content, language=lang_param)
-                        summary = clean_html(summary, language=lang_code)
-                    
+                    # If local sum fails to produce good text, fallback to clean rss summary
                     if len(summary) < 50:
-                        continue
+                        summary = rss_summary[:400] + "..."
                         
                     image_url = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c'
                     if 'media_content' in entry and entry['media_content']:
@@ -261,13 +213,13 @@ async def sync_all_news():
         {'name': 'The Hindu', 'url': 'https://www.thehindu.com/news/national/feeder/default.rss', 'category': 'National', 'language': 'en'},
         {'name': 'BBC World', 'url': 'http://feeds.bbci.co.uk/news/world/rss.xml', 'category': 'International', 'language': 'en'},
         {'name': 'Al Jazeera War', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
-        {'name': 'BBC Politics', 'url': 'http://feeds.bbci.co.uk/news/politics/rss.xml', 'category': 'Politics', 'language': 'en'},
+        {'name': 'Reuters Politics', 'url': 'https://www.reutersagency.com/feed/?best-topics=political-news&post_type=best', 'category': 'Politics', 'language': 'en'},
         
         # --- GOOGLE NEWS HINDI (ULTRA CLEAN & ALWAYS FULL) ---
         {'name': 'Google Hindi National', 'url': 'https://news.google.com/rss/headlines/section/topic/NATION?hl=hi&gl=IN&ceid=IN:hi', 'category': 'National', 'language': 'hi'},
         {'name': 'Google Hindi World', 'url': 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=hi&gl=IN&ceid=IN:hi', 'category': 'International', 'language': 'hi'},
-        {'name': 'Google Hindi Politics', 'url': 'https://news.google.com/rss/search?q=%E0%A4%B0%E0%A4%BE%E0%A4%9C%E0%A4%A8%E0%A5%80%E0%A4%A4%E0%A4%BF&hl=hi&gl=IN&ceid=IN:hi', 'category': 'Politics', 'language': 'hi'},
-        {'name': 'Google Hindi War', 'url': 'https://news.google.com/rss/search?q=%E0%A4%AF%E0%A5%81%E0%A4%A6%E0%A5%8D%E0%A4%A7+%E0%A4%B8%E0%A4%82%E0%A4%98%E0%A4%B0%E0%A5%8D%E0%A4%B7&hl=hi&gl=IN&ceid=IN:hi', 'category': 'War', 'language': 'hi'},
+        {'name': 'Google Hindi Politics', 'url': 'https://news.google.com/rss/search?q=politics&hl=hi&gl=IN&ceid=IN:hi', 'category': 'Politics', 'language': 'hi'},
+        {'name': 'Google Hindi War', 'url': 'https://news.google.com/rss/search?q=war+conflict&hl=hi&gl=IN&ceid=IN:hi', 'category': 'War', 'language': 'hi'},
         {'name': 'Aaj Tak Home', 'url': 'https://www.aajtak.in/rssfeeds/?id=home', 'category': 'National', 'language': 'hi'}
     ]
     
