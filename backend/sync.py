@@ -11,7 +11,7 @@ from models import Article
 from sqlalchemy.future import select
 from sqlalchemy import or_, func, desc
 import os
-import google.generativeai as genai
+# import google.generativeai as genai
 import trafilatura
 from dotenv import load_dotenv
 import threading

@@ -19,7 +19,8 @@ COPY . .
 # Expose the API port
 EXPOSE 8000
 
+# Run the NLTK data download during build
+RUN python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
+
 # Run the server and the sync task
-# We use a shell script or a multi-process manager like supervisor for production
-# For now, we use a simple command that runs the FastAPI app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
