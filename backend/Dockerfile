@@ -19,8 +19,9 @@ COPY . .
 # Expose the API port
 EXPOSE 8000
 
-# Run the NLTK data download during build
-RUN python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
+# Pre-download NLTK data to avoid runtime errors
+RUN python3 -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab'); nltk.download('stopwords')"
+RUN pip install groq
 
 # Run the server and the sync task
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
