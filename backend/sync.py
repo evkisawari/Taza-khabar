@@ -38,7 +38,13 @@ def call_gemini(prompt):
 
 def local_smart_summarize(text, language="english", sentences_count=3):
     try:
-        parser = PlaintextParser.from_string(text, Tokenizer(language))
+        # Try requested language first
+        try:
+            parser = PlaintextParser.from_string(text, Tokenizer(language))
+        except:
+            # Fallback to English tokenizer if language (like hindi) is missing
+            parser = PlaintextParser.from_string(text, Tokenizer("english"))
+            
         summarizer = LsaSummarizer()
         summary = summarizer(parser.document, sentences_count)
         result = " ".join([str(sentence) for sentence in summary])
