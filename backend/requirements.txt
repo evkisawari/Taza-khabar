@@ -16,3 +16,4 @@ trafilatura
 nltk
 asyncpg
 psycopg2-binary
+groq
