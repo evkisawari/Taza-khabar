@@ -21,7 +21,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-flash-latest')
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 else:
     model = None
 
@@ -149,9 +149,10 @@ async def summarize(text, language='en'):
             3. Tone: Professional, clear, and engaging. Focus on the core story.
             4. Ending: MUST end with a full stop (.).
             5. Content: Explain the Who, What, Where, and Why.
-            6. NO SOURCE NAMES: Strictly DO NOT mention "AajTak", "News18", "BBC", "Amar Ujala", or any other news brand name in the summary.
-            7. NO METADATA: Strictly DO NOT include author names, reading times (e.g. "9 min read"), or designations.
-            8. NO LABELS: Do not include "Read more", "Click here", or "Learn more".
+            6. NO SOURCE NAMES: Strictly DO NOT mention "AajTak", "News18", "BBC", "Amar Ujala", "Navbharat Times", "DW.com", "Bhaskar", or any other news brand name.
+            7. NO METADATA: Strictly DO NOT include author names, reading times (e.g. "9 min read"), designations, or "Written by" lines.
+            8. NO LABELS: Do not include "Read more", "Click here", "Copy link", or "Learn more".
+            9. STORY ONLY: Return only the facts of the story in a professional tone. No lists of sources.
             
             Article Content: {text}
             """
@@ -281,13 +282,48 @@ async def fetch_direct_rss(source):
                     desc = entry.get('description', entry.get('summary', ''))
                     clean_content = clean_html(desc)
 
-                # --- AI DECISION POINT ---
-                # Let AI decide if this story is worth showing (Filters out JSON/Junk)
-                if not await is_high_quality(clean_content, language=source.get('language', 'en')):
-                    logger.info(f"⏭️ AI Rejected low-quality article: {entry.get('title')}")
+                # --- CONSOLIDATED AI DECISION & SUMMARY ---
+                # We do this in one call to save API quota (Free Tier)
+                prompt = f"""
+                You are a Chief Editor. Analyze this content and follow these steps:
+                1. QUALITY CHECK: If the content is technical junk (JSON, CSS), meta-data repetitive lists, or promotional spam, reply ONLY with 'REJECT'.
+                2. SUMMARIZE: If it is a good news story, summarize it following these rules:
+                   - Length: 60-80 words. Strictly.
+                   - Style: Professional Inshorts style.
+                   - NO Source names (AajTak, BBC, etc.).
+                   - NO Metadata (Authors, reading times).
+                
+                Content: {clean_content}
+                """
+                
+                response = model.generate_content(prompt)
+                ai_result = response.text.strip()
+                
+                if "REJECT" in ai_result.upper() or len(ai_result) < 100:
+                    logger.info(f"⏭️ AI Rejected low-quality or junk article: {entry.get('title')}")
                     continue
+                
+                short_content = ai_result
+                # --- FINAL NUCLEAR Post-processing (Regex clean) ---
+                # This deletes BRAND NAMES + AUTHOR/META patterns if AI fails
+                patterns_to_remove = [
+                    r"(?i)AajTak", r"(?i)News18", r"(?i)BBC", r"(?i)Amar Ujala", 
+                    r"(?i)Navbharat Times", r"(?i)DW.com", r"(?i)Bhaskar", r"(?i)Dainik",
+                    r"(?i)Author(:)?\s?.*", r"(?i)Written by(:)?\s?.*", r"(?i)By\s?.*",
+                    r"(?i)Read more(:)?\s?.*", r"(?i)Learn more(:)?\s?.*", r"(?i)Copy link",
+                    r"(?i)Designation(:)?\s?.*", r"(?i)पदनाम(:)?\s?.*", r"(?i)असद सुहैब",
+                    r"(?i)पढ़ने का समय(:)?\s?\d+\s?मिनट"
+                ]
+                
+                for pattern in patterns_to_remove:
+                    short_content = re.sub(pattern, "", short_content).strip()
 
-                short_content = await summarize(clean_content, language=source.get('language', 'en'))
+                # Fix punctuation and whitespace after removals
+                short_content = re.sub(r'\s+', ' ', short_content)
+                short_content = re.sub(r'\.\s*\.', '.', short_content).strip()
+
+                # Rate limit protection (Free Tier)
+                await asyncio.sleep(6)
                 cleaned_title = clean_title(entry.get('title', ''))
 
                 # Generate a unique ID
