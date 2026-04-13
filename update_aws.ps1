@@ -17,9 +17,12 @@ git add .
 git commit -m "Auto-update from laptop"
 git push origin main
 
-Write-Host "`n[3/4] Connecting to AWS and pulling new code..." -ForegroundColor Cyan
+Write-Host "`n[3/4] Connecting to AWS and syncing configuration..." -ForegroundColor Cyan
 $sshKeyPath = (Resolve-Path $PEM_NAME).Path
+# Sync the code
 & "$SSH_EXE" -o StrictHostKeyChecking=no -i "$sshKeyPath" ec2-user@$AWS_IP "cd $REMOTE_DIR && git pull origin main"
+# Securely upload the .env file (since it's ignored by git)
+Get-Content "backend/.env" | & "$SSH_EXE" -o StrictHostKeyChecking=no -i "$sshKeyPath" ec2-user@$AWS_IP "cat > $REMOTE_DIR/.env"
 
 Write-Host "`n[4/4] Restarting the Docker container..." -ForegroundColor Cyan
 & "$SSH_EXE" -o StrictHostKeyChecking=no -i "$sshKeyPath" ec2-user@$AWS_IP "sudo docker stop news-server news-live ; sudo docker rm news-server news-live ; cd $REMOTE_DIR && sudo docker build -t news-backend . && sudo docker run -d -p 8000:8000 --name news-server news-backend"
