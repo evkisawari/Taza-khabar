@@ -26,10 +26,9 @@ async def startup_event():
     await init_db()
     asyncio.create_task(background_sync())
 
-@app.post("/api/sync")
-async def trigger_sync():
-    asyncio.create_task(sync_all_news())
-    return {"message": "Sync triggered"}
+@app.get("/")
+async def root():
+    return {"message": "Taza Khabar API is Online"}
 
 async def background_sync():
     while True:
@@ -37,11 +36,7 @@ async def background_sync():
             await sync_all_news()
         except Exception as e:
             logging.error(f"Background sync error: {e}")
-        await asyncio.sleep(300) 
-
-@app.get("/")
-async def root():
-    return {"message": "Taza Khabar API is Online"}
+        await asyncio.sleep(300)
 
 @app.get("/api/status")
 async def get_status():
