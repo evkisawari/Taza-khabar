@@ -279,17 +279,27 @@ async def sync_all_news():
         {'name': 'The Print Politics', 'url': 'https://theprint.in/category/politics/feed/', 'category': 'Politics', 'language': 'en'},
         {'name': 'Al Jazeera War', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
 
+        # --- ENGLISH (Additional Categories) ---
+        {'name': 'News18 Sports', 'url': 'https://www.news18.com/rss/sports.xml', 'category': 'Sports', 'language': 'en'},
+        {'name': 'The Hindu Business', 'url': 'https://www.thehindu.com/business/feeder/default.rss', 'category': 'Business', 'language': 'en'},
+        {'name': 'News18 Ent', 'url': 'https://www.news18.com/rss/movies.xml', 'category': 'Entertainment', 'language': 'en'},
+
         # --- HINDI (National) ---
         {'name': 'Amar Ujala', 'url': 'https://www.amarujala.com/rss/breaking-news.xml', 'category': 'National', 'language': 'hi'},
         {'name': 'Live Hindustan', 'url': 'https://feed.livehindustan.com/rss/3127', 'category': 'National', 'language': 'hi'},
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-feed/1061/', 'category': 'National', 'language': 'hi'},
         {'name': 'India TV Hindi', 'url': 'https://www.indiatv.in/cms/rssfeed', 'category': 'National', 'language': 'hi'},
 
-        # --- HINDI (International & Politics & War) ---
+        # --- HINDI (International, Politics, War) ---
         {'name': 'News18 Hindi World', 'url': 'https://hindi.news18.com/khabar-rss/', 'category': 'International', 'language': 'hi'},
         {'name': 'Jansatta Politics', 'url': 'https://www.jansatta.com/feed/', 'category': 'Politics', 'language': 'hi'},
         {'name': 'Bhaskar Politics', 'url': 'https://www.bhaskar.com/rss-v1--category-1065.xml', 'category': 'Politics', 'language': 'hi'},
         {'name': 'Bhaskar World', 'url': 'https://www.bhaskar.com/rss-v1--category-1068.xml', 'category': 'War', 'language': 'hi'},
+
+        # --- HINDI (Additional Categories) ---
+        {'name': 'Bhaskar Sports', 'url': 'https://www.bhaskar.com/rss-v1--category-1066.xml', 'category': 'Sports', 'language': 'hi'},
+        {'name': 'Amar Ujala Biz', 'url': 'https://www.amarujala.com/rss/business.xml', 'category': 'Business', 'language': 'hi'},
+        {'name': 'Amar Ujala Ent', 'url': 'https://www.amarujala.com/rss/entertainment.xml', 'category': 'Entertainment', 'language': 'hi'},
     ]
 
     # Process in small batches to avoid overloading
