@@ -18,13 +18,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure Google Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # Using Gemini 2.0 Flash for superior performance and better quota handling
-    model = genai.GenerativeModel('gemini-2.0-flash')
-else:
-    model = None
+# Model hierarchy for fallback (to avoid quota issues)
+MODEL_PRIORITY = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.0-pro']
+
+def call_gemini(prompt):
+    """Reliably calls Gemini with automatic fallback to secondary models if quota is hit."""
+    if not os.getenv("GEMINI_API_KEY"):
+        return None
+        
+    for model_name in MODEL_PRIORITY:
+        try:
+            curr_model = genai.GenerativeModel(model_name)
+            response = curr_model.generate_content(prompt)
+            if hasattr(response, 'text') and response.text:
+                return response.text.strip()
+        except Exception as e:
+            if "429" in str(e) or "quota" in str(e).lower():
+                logging.warning(f"⚠️ Model {model_name} hit quota. Trying fallback...")
+                continue
+            logging.error(f"❌ Error with model {model_name}: {e}")
+            continue
+    return None
 
 async def is_high_quality(text, language='hi'):
     """Use Gemini to decide if this news is worth showing (filters out junk and technical noise)."""
@@ -311,12 +325,12 @@ async def fetch_direct_rss(source):
                     clean_content = clean_html(desc)
 
                 # --- CONSOLIDATED AI DECISION & SUMMARY ---
-                # We do this in one call to save API quota (Free Tier)
+                # We use a smart-call with fallback to bypass quota errors
                 prompt = f"""
                 You are a Chief Editor. Analyze this content and follow these steps:
                 1. QUALITY CHECK: If the content is technical junk (JSON, CSS), meta-data repetitive lists, or promotional spam, reply ONLY with 'REJECT'.
                 2. SUMMARIZE: If it is a good news story, summarize it following these rules:
-                   - Length: 60-80 words. Strictly.
+                   - Length: 60-80 words.
                    - Style: Professional Inshorts style.
                    - NO Source names (AajTak, BBC, etc.).
                    - NO Metadata (Authors, reading times).
@@ -324,10 +338,9 @@ async def fetch_direct_rss(source):
                 Content: {clean_content}
                 """
                 
-                response = model.generate_content(prompt)
-                ai_result = response.text.strip()
+                ai_result = call_gemini(prompt)
                 
-                if "REJECT" in ai_result.upper() or len(ai_result) < 100:
+                if not ai_result or "REJECT" in ai_result.upper():
                     logger.info(f"⏭️ AI Rejected low-quality or junk article: {entry.get('title')}")
                     continue
                 
