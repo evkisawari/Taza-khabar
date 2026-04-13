@@ -25,50 +25,84 @@ logger = logging.getLogger("sync")
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
-# =============================================================
-# GROQ AI SUMMARIZER
-# =============================================================
-def groq_summarize(text: str, language: str = "english") -> str:
-    """Use Groq Llama3 to write a clean 60-word professional news summary."""
-    if not text or len(text.strip()) < 150:
-        logger.warning("Text too short for summarization, skipping.")
-        return ""
+import time
 
+# =============================================================
+# GROQ AI SUMMARIZER (with auto-retry on rate limit)
+# =============================================================
+def _call_groq(prompt: str, max_tokens: int = 150) -> str:
+    """Make a Groq API call with up to 3 retries on rate limit (429)."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         logger.error("❌ GROQ_API_KEY not found in environment!")
         return ""
+    client = Groq(api_key=api_key)
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.3,
+                max_tokens=max_tokens,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "rate_limit" in err:
+                # Extract wait time from error message, default 60s
+                import re as _re
+                wait_match = _re.search(r'try again in (\d+)m(\d+(\.\d+)?)?s', err)
+                wait_sec = int(wait_match.group(1)) * 60 + 10 if wait_match else 65
+                wait_sec = min(wait_sec, 120)  # Cap at 2 minutes
+                logger.warning(f"⏳ Rate limit hit. Waiting {wait_sec}s before retry {attempt+1}/3...")
+                time.sleep(wait_sec)
+            else:
+                logger.error(f"❌ Groq API error: {err}")
+                return ""
+    logger.error("❌ Groq gave up after 3 retries.")
+    return ""
 
-    try:
-        client = Groq(api_key=api_key)
-        lang_instruction = "Hindi (Devanagari script only)" if language == "hindi" else "English"
-        
-        prompt = f"""You are a professional news editor. Write a clean, factual 60-word summary of the article below.
 
-Rules:
+def groq_summarize(text: str, language: str = "english") -> str:
+    """Use Groq to write a professional 60-word news summary. Never stores raw text."""
+    if not text or len(text.strip()) < 150:
+        return ""
+    
+    lang_instruction = "Hindi (Devanagari script only, no English words)" if language == "hindi" else "English"
+    prompt = f"""You are a professional news editor for a top news app.
+Write a clear, factual summary of this news article in EXACTLY 55-65 words.
+
+Strict rules:
 - Language: {lang_instruction}
-- Output ONLY the summary. No intro phrases like "Here is..." or "Sure..."
-- Do NOT mention the source website name
-- Do NOT include any metadata, links, or UI elements
-- Max 75 words
+- Output ONLY the summary paragraph. Nothing else.
+- NO intro phrases like "Here is...", "Sure...", "Summary:"
+- NO source names, website names, or author names
+- NO ellipsis (...) at the end
+- Must be a complete sentence
 
 Article:
-{text[:800]}"""
+{text[:1200]}"""
 
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            max_tokens=150,
-        )
-        summary = response.choices[0].message.content.strip()
-        # Remove any leaked prefix phrases
-        summary = re.sub(r'^(Sure|Here is|Summary|सारांश|यहाँ)[^।.]*[।:.]?\s*', '', summary, flags=re.IGNORECASE).strip()
-        logger.info(f"✅ Groq summary generated ({len(summary)} chars)")
-        return summary
-    except Exception as e:
-        logger.error(f"❌ Groq API failed: {e}")
+    summary = _call_groq(prompt, max_tokens=150)
+    if not summary:
         return ""
+    # Strip any leaked prefix
+    summary = re.sub(r'^(Sure|Here is|Summary|सारांश|यहाँ)[^।.]*[।:.]?\s*', '', summary, flags=re.IGNORECASE).strip()
+    logger.info(f"✅ Groq summary ({len(summary)} chars): {summary[:60]}...")
+    return summary
+
+
+def groq_make_title(text: str, language: str = "english") -> str:
+    """Use Groq to write a clean, punchy news headline (max 12 words)."""
+    if not text or len(text.strip()) < 100:
+        return ""
+    lang_instruction = "Hindi (Devanagari script only)" if language == "hindi" else "English"
+    prompt = f"""Write a punchy, factual news headline in {lang_instruction} for this article.
+Max 12 words. Output ONLY the headline. No quotes, no punctuation at end.
+
+Article:
+{text[:600]}"""
+    return _call_groq(prompt, max_tokens=50)
 
 
 # =============================================================
@@ -217,12 +251,15 @@ async def ingest_source(source: dict):
                     logger.info(f"Skipping (too short): {title[:50]}")
                     continue
 
-                # --- STEP 2: Send to Groq for professional summary ---
+                # --- STEP 2: Generate AI title + AI summary from Groq ---
+                ai_title = groq_make_title(content_for_ai, language=lang_param)
+                final_title = ai_title if ai_title and len(ai_title) > 5 else title
+
                 summary = groq_summarize(content_for_ai, language=lang_param)
 
-                # If Groq fails, skip the article entirely (no junk fallback)
+                # Skip article entirely if Groq couldn't summarize — no raw text stored ever
                 if not summary or len(summary) < 30:
-                    logger.warning(f"Groq returned empty summary, skipping: {title[:50]}")
+                    logger.warning(f"Groq returned empty summary, skipping: {final_title[:50]}")
                     continue
 
                 # --- STEP 3: Get image ---
@@ -235,7 +272,7 @@ async def ingest_source(source: dict):
                 # --- STEP 4: Save to DB ---
                 article = Article(
                     id=art_id,
-                    title=title,
+                    title=final_title,
                     content=summary,
                     image_url=image_url,
                     source_name=source['name'],
@@ -247,7 +284,7 @@ async def ingest_source(source: dict):
                 db.add(article)
                 await db.commit()
                 articles_saved += 1
-                logger.info(f"✅ Saved: [{lang_code}/{source['category']}] {title[:60]}")
+                logger.info(f"✅ Saved: [{lang_code}/{source['category']}] {final_title[:60]}")
 
                 # Small delay to avoid Groq rate limits
                 await asyncio.sleep(2)
