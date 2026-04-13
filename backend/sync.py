@@ -17,31 +17,47 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Configure Google Gemini
-# Model hierarchy for fallback (to avoid quota issues)
-MODEL_PRIORITY = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.0-pro']
-
-def call_gemini(prompt):
-    """Reliably calls Gemini with automatic fallback to secondary models if quota is hit."""
+# --- AUTO-DISCOVERY ENGINE ---
+def get_best_model():
+    """Scans the Google account to find available models automatically (Prevents 404s)"""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
-    
-    # Configure the key before calling models
-    genai.configure(api_key=api_key)
+    try:
+        genai.configure(api_key=api_key)
+        # Scan for best available news model
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-    for model_name in MODEL_PRIORITY:
-        try:
-            curr_model = genai.GenerativeModel(model_name)
-            response = curr_model.generate_content(prompt)
-            if hasattr(response, 'text') and response.text:
-                return response.text.strip()
-        except Exception as e:
-            if "429" in str(e) or "quota" in str(e).lower():
-                logging.warning(f"⚠️ Model {model_name} hit quota. Trying fallback...")
-                continue
-            logging.error(f"❌ Error with model {model_name}: {e}")
-            continue
+        # Priority mapping
+        priority = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.0-pro']
+        for p in priority:
+            for a in available:
+                if p in a: return a
+        return available[0] if available else None
+    except Exception as e:
+        logging.error(f"🔍 Discovery Error: {e}")
+        return 'gemini-1.5-flash' # Safe default
+
+# Initialize once at startup
+BEST_MODEL_NAME = get_best_model()
+
+def call_gemini(prompt):
+    """Reliably calls the discovered model with a single robust attempt."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or not BEST_MODEL_NAME:
+        return None
+    
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(BEST_MODEL_NAME)
+        response = model.generate_content(prompt)
+        if hasattr(response, 'text') and response.text:
+            return response.text.strip()
+    except Exception as e:
+        if "429" in str(e):
+            logging.warning("⚠️ Quota hit. Waiting...")
+        else:
+            logging.error(f"❌ Execution Error: {e}")
     return None
 
 async def is_high_quality(text, language='hi'):
