@@ -11,6 +11,11 @@ async def clean_html(raw_html):
         s.decompose()
     text = soup.get_text(separator=' ')
     text = html_parser.unescape(text)
+    
+    # Remove technical JSON-LD or Hydration Data
+    text = re.sub(r'\{[^{}]*"_id":[^{}]*\}', '', text)
+    text = re.sub(r'\{[^{}]*"slug":[^{}]*\}', '', text)
+    
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 

@@ -21,9 +21,41 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-flash-latest')
 else:
     model = None
+
+async def is_high_quality(text, language='hi'):
+    """Use Gemini to decide if this news is worth showing (filters out junk and technical noise)."""
+    if not model or not text or len(text) < 150:
+        return False
+        
+    try:
+        # We want to filter out tech junk, snippets with just JSON, or broken scrapes.
+        # "Good News" focus: prioritize informative, uplifting, or relevant stories.
+        prompt = f"""
+        Act as a "Good News" Chief Editor. Decide if this content is high-quality news for humans.
+        Language: {language}
+        
+        REJECT if:
+        - Contains technical JSON code, scripts, or internal metadata (e.g. {{"_id": "...", "slug": "..."}}).
+        - It is just "loading...", "cookie policy", or broken text fragments.
+        - It is irrelevant garbage or purely promotional spam.
+        
+        ACCEPT if:
+        - It is a readable news story, report, or update.
+        - It is informative, interesting, or uplifting.
+        
+        Content: {text[:1000]}
+        
+        Answer with ONLY 'ACCEPT' or 'REJECT'.
+        """
+        response = await model.generate_content_async(prompt)
+        result = response.text.strip().upper()
+        return "ACCEPT" in result
+    except Exception as e:
+        logger.error(f"AI Decision Error: {e}")
+        return True # Default to True to avoid losing news on API failure
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -63,8 +95,14 @@ def clean_html(raw_html):
         if s.lower() in ["loading...", "read more", "continue reading"]: continue
         cleaned_sentences.append(s)
     
-    # 3. Final Rejoin
+    # 3. Final Rejoin and Technical Junk Removal
     text = " ".join(cleaned_sentences)
+    
+    # Remove technical JSON-LD or Hydration Data (Common in modern news sites)
+    text = re.sub(r'\{[^{}]*"_id":[^{}]*\}', '', text)
+    text = re.sub(r'\{[^{}]*"slug":[^{}]*\}', '', text)
+    text = re.sub(r'\{[^{}]*"type":[^{}]*\}', '', text)
+    
     text = re.sub(r'https?://\S+', '', text) # Final URL safety
     text = re.sub(r'\s+', ' ', text).strip()
     
@@ -99,15 +137,17 @@ async def summarize(text, language='en'):
     if model:
         try:
             prompt = f"""
-            Summarize this news in {language} like a professional news editor (Inshorts style).
-            RULES:
-            1. Length: Exactly between 60 to 80 words.
-            2. Content: Cover Who, What, Where, When, and Why.
-            3. Flow: Professional, engaging, and clear.
-            4. Ending: MUST end with a full stop (.). NEVER use ellipses (...).
-            5. Pure Text: No markdown, no "Read more", no labels.
+            Act as a "Good News" Editor for an app called Taza Khabar.
+            Task: Summarize this article in {language} for a mobile news feed (Inshorts style).
             
-            Article: {text}
+            STRICT RULES:
+            1. Length: Exactly 60-80 words.
+            2. Formatting: NO technical junk, NO JSON, NO meta-data.
+            3. Tone: Professional, clear, and engaging. Focus on the core story.
+            4. Ending: MUST end with a full stop (.).
+            5. Content: Explain the Who, What, Where, and Why.
+            
+            Article Content: {text}
             """
             response = await model.generate_content_async(prompt)
             summary = response.text.strip()
@@ -234,6 +274,12 @@ async def fetch_direct_rss(source):
                     # Fallback to RSS description if scraping fails
                     desc = entry.get('description', entry.get('summary', ''))
                     clean_content = clean_html(desc)
+
+                # --- AI DECISION POINT ---
+                # Let AI decide if this story is worth showing (Filters out JSON/Junk)
+                if not await is_high_quality(clean_content, language=source.get('language', 'en')):
+                    logger.info(f"⏭️ AI Rejected low-quality article: {entry.get('title')}")
+                    continue
 
                 short_content = await summarize(clean_content, language=source.get('language', 'en'))
                 cleaned_title = clean_title(entry.get('title', ''))
