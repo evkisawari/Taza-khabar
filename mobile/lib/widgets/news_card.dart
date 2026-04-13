@@ -32,7 +32,7 @@ class NewsCard extends StatelessWidget {
                       CachedNetworkImage(
                         imageUrl: article.imageUrl,
                         width: double.infinity,
-                        height: size.height * 0.40, 
+                        height: size.height * 0.35, 
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Container(
                           color: const Color(0xFF1A1A1A),

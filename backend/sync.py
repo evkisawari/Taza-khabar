@@ -79,7 +79,10 @@ def clean_html(raw_html):
         "Source:", "Source Link:", "Read more at:", "Read more:", 
         "Source Name:", "The post appeared first on", "Check out more",
         "Subscribe to", "Follow us on", "Click here to", "ALSO READ",
-        "Copyright", "All rights reserved"
+        "Copyright", "All rights reserved", "Aaj Tak", "News18", "Amar Ujala",
+        "Dainik Bhaskar", "BBC", "Reuters", "The Hindu", "Times of India",
+        "Read more", "Continue reading", "Learn more", "Author", "Designation",
+        "Reading time", "पदनाम", "पढ़ने का समय", "मिनट", "सुहैब"
     ]
     
     # Split by periods or suggestive breaks to filter individual sentences
@@ -146,6 +149,9 @@ async def summarize(text, language='en'):
             3. Tone: Professional, clear, and engaging. Focus on the core story.
             4. Ending: MUST end with a full stop (.).
             5. Content: Explain the Who, What, Where, and Why.
+            6. NO SOURCE NAMES: Strictly DO NOT mention "AajTak", "News18", "BBC", "Amar Ujala", or any other news brand name in the summary.
+            7. NO METADATA: Strictly DO NOT include author names, reading times (e.g. "9 min read"), or designations.
+            8. NO LABELS: Do not include "Read more", "Click here", or "Learn more".
             
             Article Content: {text}
             """
