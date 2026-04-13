@@ -23,8 +23,12 @@ MODEL_PRIORITY = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-fla
 
 def call_gemini(prompt):
     """Reliably calls Gemini with automatic fallback to secondary models if quota is hit."""
-    if not os.getenv("GEMINI_API_KEY"):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
         return None
+    
+    # Configure the key before calling models
+    genai.configure(api_key=api_key)
         
     for model_name in MODEL_PRIORITY:
         try:
