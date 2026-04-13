@@ -285,10 +285,11 @@ async def sync_all_news():
         {'name': 'Bhaskar National', 'url': 'https://www.bhaskar.com/rss-feed/1061/', 'category': 'National', 'language': 'hi'},
         {'name': 'India TV Hindi', 'url': 'https://www.indiatv.in/cms/rssfeed', 'category': 'National', 'language': 'hi'},
 
-        # --- HINDI (International & Politics) ---
+        # --- HINDI (International & Politics & War) ---
         {'name': 'News18 Hindi World', 'url': 'https://hindi.news18.com/khabar-rss/', 'category': 'International', 'language': 'hi'},
         {'name': 'Jansatta Politics', 'url': 'https://www.jansatta.com/feed/', 'category': 'Politics', 'language': 'hi'},
         {'name': 'Bhaskar Politics', 'url': 'https://www.bhaskar.com/rss-v1--category-1065.xml', 'category': 'Politics', 'language': 'hi'},
+        {'name': 'Bhaskar World', 'url': 'https://www.bhaskar.com/rss-v1--category-1068.xml', 'category': 'War', 'language': 'hi'},
     ]
 
     # Process in small batches to avoid overloading
