@@ -116,7 +116,7 @@ async def fetch_article_body(url):
     except:
         return None
 
-async def fetch_direct_rss(source):
+async def fetch_direct_rss(source, db):
     articles = []
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36'}
@@ -124,9 +124,18 @@ async def fetch_direct_rss(source):
             response = await client.get(source['url'])
             feed = feedparser.parse(response.text)
             
-            for entry in feed.entries[:5]: # Take top 5 for freshness
+            # Increased to 30 articles! We can do this now because we save AI quota
+            for entry in feed.entries[:30]: 
                 article_url = entry.get('link')
                 if not article_url: continue
+                
+                cleaned_title = clean_title(entry.get('title', ''))
+                art_id = f"{article_url}_{cleaned_title}"
+                
+                # PRE-FLIGHT CHECK: Let's not waste our Gemini Quota if we already have it!
+                exists = await db.execute(select(Article).where(Article.id == art_id))
+                if exists.scalars().first():
+                    continue # Skip! Already in database
                 
                 # Scraping
                 full_body = await fetch_article_body(article_url)
@@ -158,10 +167,8 @@ async def fetch_direct_rss(source):
                 for b in blacklist:
                     summary = re.sub(re.escape(b), "", summary, flags=re.IGNORECASE)
                 
-                cleaned_title = clean_title(entry.get('title', ''))
-                
-                articles.append(Article(
-                    id=f"{article_url}_{cleaned_title}",
+                new_art = Article(
+                    id=art_id,
                     title=cleaned_title,
                     content=summary.strip(),
                     image_url=entry.get('media_content', [{}])[0].get('url', 'https://images.unsplash.com/photo-1504711434969-e33886168f5c'),
@@ -170,9 +177,15 @@ async def fetch_direct_rss(source):
                     category=source['category'],
                     language=source.get('language', 'en'),
                     created_at=datetime.utcnow()
-                ))
-                # BREATHING ROOM FOR QUOTA
-                await asyncio.sleep(6) 
+                )
+                articles.append(new_art)
+                
+                # Because we verified it's new, we commit it immediately
+                db.add(new_art)
+                await db.commit()
+                
+                # BREATHING ROOM FOR QUOTA (Max 10 requests per minute)
+                await asyncio.sleep(6)
                 
         return articles
     except Exception as e:
@@ -191,13 +204,7 @@ async def sync_all_news():
     async with AsyncSessionLocal() as db:
         for source in sources:
             logger.info(f"Processing {source['name']}...")
-            articles = await fetch_direct_rss(source)
-            for art in articles:
-                # Deduplication
-                exists = await db.execute(select(Article).where(Article.id == art.id))
-                if not exists.scalars().first():
-                    db.add(art)
-            await db.commit()
+            await fetch_direct_rss(source, db)
     logger.info("✅ Sync Complete!")
 
 if __name__ == "__main__":
