@@ -26,6 +26,11 @@ async def startup_event():
     await init_db()
     asyncio.create_task(background_sync())
 
+@app.post("/api/sync")
+async def trigger_sync():
+    asyncio.create_task(sync_all_news())
+    return {"message": "Sync triggered"}
+
 async def background_sync():
     while True:
         try:
@@ -66,8 +71,9 @@ async def trigger_sync():
 async def get_news(category: str = "all", language: str = "en", limit: int = 10, offset: int = 0):
     async with AsyncSessionLocal() as db:
         query = select(Article)
+        # CASE INSENSITIVE CATEGORY FILTER
         if category.lower() != "all":
-            query = query.filter(Article.category == category)
+            query = query.filter(func.lower(Article.category) == category.lower())
         
         query = query.filter(Article.language == language)
         query = query.order_by(desc(Article.created_at)).offset(offset).limit(limit)
