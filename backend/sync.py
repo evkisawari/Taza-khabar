@@ -35,7 +35,6 @@ async def _call_groq(prompt: str, max_tokens: int = 150) -> str:
     """Make a Groq API call with up to 3 retries on rate limit (429)."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        logger.error("❌ GROQ_API_KEY not found in environment!")
         return ""
     client = AsyncGroq(api_key=api_key)
     for attempt in range(3):
@@ -50,18 +49,56 @@ async def _call_groq(prompt: str, max_tokens: int = 150) -> str:
         except Exception as e:
             err = str(e)
             if "429" in err or "rate_limit" in err:
-                # Extract wait time from error message, default 60s
-                import re as _re
-                wait_match = _re.search(r'try again in (\d+)m(\d+(\.\d+)?)?s', err)
+                wait_match = re.search(r'try again in (\d+)m(\d+(\.\d+)?)?s', err)
                 wait_sec = int(wait_match.group(1)) * 60 + 10 if wait_match else 65
-                wait_sec = min(wait_sec, 60)  # Cap at 1 minute so we don't hold up indefinitely
-                logger.warning(f"⏳ Rate limit hit. Waiting {wait_sec}s before retry {attempt+1}/3...")
+                wait_sec = min(wait_sec, 60)
+                logger.warning(f"⏳ Groq Rate limit hit. Waiting {wait_sec}s...")
                 await asyncio.sleep(wait_sec)
             else:
                 logger.error(f"❌ Groq API error: {err}")
                 return ""
-    logger.error("❌ Groq gave up after 3 retries.")
     return ""
+
+
+async def _call_deepseek(prompt: str, max_tokens: int = 150) -> str:
+    """Fallback to DeepSeek API if Groq fails."""
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.3
+                }
+            )
+            if response.status_code == 200:
+                result = response.json()
+                return result['choices'][0]['message']['content'].strip()
+            else:
+                logger.error(f"❌ DeepSeek Error: {response.status_code} - {response.text}")
+                return ""
+    except Exception as e:
+        logger.error(f"❌ DeepSeek Connection Error: {e}")
+        return ""
+
+
+async def ai_complete(prompt: str, max_tokens: int = 150) -> str:
+    """Tries Groq first, then DeepSeek as fallback."""
+    # Try Groq
+    res = await _call_groq(prompt, max_tokens)
+    if res:
+        return res
+    
+    # Fallback to DeepSeek
+    logger.info("🔄 Groq failed/limited. Switching to DeepSeek...")
+    return await _call_deepseek(prompt, max_tokens)
+
 
 
 async def groq_summarize(text: str, language: str = "english") -> str:
@@ -84,7 +121,7 @@ Strict rules:
 Article:
 {text[:1200]}"""
 
-    summary = await _call_groq(prompt, max_tokens=150)
+    summary = await ai_complete(prompt, max_tokens=150)
     if not summary:
         return ""
     # Strip any leaked prefix
@@ -104,7 +141,7 @@ Max 12 words. Output ONLY the headline. No quotes, no punctuation at end.
 
 Article:
 {text[:600]}"""
-    return await _call_groq(prompt, max_tokens=50)
+    return await ai_complete(prompt, max_tokens=50)
 
 
 # =============================================================
