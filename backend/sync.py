@@ -316,6 +316,8 @@ async def sync_all_news():
 
         # --- ENGLISH (Politics & War) ---
         {'name': 'The Print Politics', 'url': 'https://theprint.in/category/politics/feed/', 'category': 'Politics', 'language': 'en'},
+        {'name': 'Hindu Elections', 'url': 'https://www.thehindu.com/elections/feeder/default.rss', 'category': 'Election', 'language': 'en'},
+        {'name': 'India Today Elections', 'url': 'https://www.indiatoday.in/rss/elections', 'category': 'Election', 'language': 'en'},
         {'name': 'Al Jazeera War', 'url': 'https://www.aljazeera.com/xml/rss/all.xml', 'category': 'War', 'language': 'en'},
 
         # --- ENGLISH (Additional Categories) ---
@@ -332,7 +334,8 @@ async def sync_all_news():
         # --- HINDI (International, Politics, War) ---
         {'name': 'News18 Hindi World', 'url': 'https://hindi.news18.com/khabar-rss/', 'category': 'International', 'language': 'hi'},
         {'name': 'Jansatta Politics', 'url': 'https://www.jansatta.com/feed/', 'category': 'Politics', 'language': 'hi'},
-        {'name': 'Bhaskar Politics', 'url': 'https://www.bhaskar.com/rss-v1--category-1065.xml', 'category': 'Politics', 'language': 'hi'},
+        {'name': 'Bhaskar Elections', 'url': 'https://www.bhaskar.com/rss-v1--category-1065.xml', 'category': 'Election', 'language': 'hi'},
+        {'name': 'Live Hindustan Elections', 'url': 'https://feed.livehindustan.com/rss/3826', 'category': 'Election', 'language': 'hi'},
         {'name': 'Bhaskar World', 'url': 'https://www.bhaskar.com/rss-v1--category-1068.xml', 'category': 'War', 'language': 'hi'},
 
         # --- HINDI (Additional Categories) ---

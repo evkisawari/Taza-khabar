@@ -58,7 +58,7 @@ async def get_status():
 async def get_categories():
     return {
         "success": True,
-        "data": ["All", "National", "Politics", "War", "International"]
+        "data": ["All", "National", "Politics", "Election", "War", "International"]
     }
 
 @app.post("/api/sync")
